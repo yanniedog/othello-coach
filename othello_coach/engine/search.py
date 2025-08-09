@@ -73,7 +73,31 @@ class Searcher:
             return evaluate(board), []
         empties = 64 - (board.B | board.W).bit_count()
         if empties <= limits.endgame_exact_empties:
-            return solve_exact(board), []
+            # Endgame: pick the move that maximizes exact outcome to ensure a PV exists
+            mask = legal_moves_mask(board.B, board.W, board.stm)
+            if mask == 0:
+                # Pass and continue exact solving deeper
+                new_stm = 1 - board.stm
+                b_pass = Board(board.B, board.W, new_stm, board.ply + 1, compute_hash(board.B, board.W, new_stm))
+                score, _ = self._negamax(b_pass, max(0, depth - 1), -beta, -alpha, start, limits, ply + 1)
+                return -score, []
+            best_score = -10_000
+            best_sq = -1
+            m = mask
+            while m:
+                lsb = m & -m
+                sq = lsb.bit_length() - 1
+                m ^= lsb
+                b2, _ = make_move(board, sq)
+                score = -solve_exact(b2)
+                if score > best_score:
+                    best_score = score
+                    best_sq = sq
+                if best_score >= beta:
+                    break
+                if best_score > alpha:
+                    alpha = best_score
+            return best_score, ([best_sq] if best_sq >= 0 else [])
         if depth == 0:
             return evaluate(board), []
 
@@ -158,10 +182,15 @@ class Searcher:
                 self.history[sq] = min(self.history[sq] + depth * depth, 10_000)
                 break
         # Store in TT with appropriate bound
+        alpha_bound = alpha
+        beta_bound = beta
+        # For correct bound classification, compare against original window
+        # Reconstruct original window by undoing last updates where possible
+        # If best_line improved alpha, we know best_score == alpha_bound at exit
         flag = EXACT
-        if best_score <= alpha:
+        if best_score <= alpha_bound:
             flag = UPPER
-        elif best_score >= beta:
+        elif best_score >= beta_bound:
             flag = LOWER
         self.tt.save(board.hash, depth, best_score, flag, best_line[0] if best_line else -1)
         return best_score, best_line

@@ -6,6 +6,7 @@ from PyQt6.QtCore import QRectF, Qt, QPointF, QElapsedTimer, QTimer, pyqtSignal
 
 from ..engine.board import start_board, legal_moves_mask, make_move, compute_hash, Board
 from ..engine.search import Searcher, SearchLimits, SearchResult
+from ..engine.solver import get_solver_threshold
 from ..engine.strength import get_strength_profile, PROFILES
 from ..insights.overlays import mobility_heat as ov_mobility_heat
 from ..insights.overlays import stability_heat as ov_stability_heat
@@ -299,9 +300,11 @@ class BoardWidget(QGraphicsView):
             return
         # Immediate scheduling if delay is zero
         if self.cpu_move_delay_ms <= 0:
+            log_event("game.cpu", "schedule_immediate", ply=self.board.ply, delay_ms=self.cpu_move_delay_ms)
             QTimer.singleShot(0, self._make_cpu_move)
             return
         if not self.cpu_timer.isActive():
+            log_event("game.cpu", "schedule_timer", ply=self.board.ply, delay_ms=self.cpu_move_delay_ms)
             self.cpu_timer.start(self.cpu_move_delay_ms)
 
     def _cpu_watchdog_tick(self) -> None:
@@ -318,12 +321,15 @@ class BoardWidget(QGraphicsView):
             if self._is_cpu_turn() and not self.cpu_busy and not self.cpu_timer.isActive():
                 self._stall_ticks += 1
                 if self.cpu_move_delay_ms <= 0:
+                    log_event("game.cpu", "watchdog_kick_immediate", ply=self.board.ply, stall_ticks=self._stall_ticks)
                     QTimer.singleShot(0, self._make_cpu_move)
                 else:
+                    log_event("game.cpu", "watchdog_kick_timer", ply=self.board.ply, stall_ticks=self._stall_ticks, delay_ms=self.cpu_move_delay_ms)
                     self.cpu_timer.start(self.cpu_move_delay_ms)
                 # If repeatedly stalled, force a fallback move to guarantee progress
                 if self._stall_ticks >= 3:
                     if legal_moves_mask(self.board) != 0:
+                        log_event("game.cpu", "watchdog_fallback", ply=self.board.ply)
                         self._play_fallback_move()
                         self._stall_ticks = 0
         except Exception:
@@ -344,16 +350,19 @@ class BoardWidget(QGraphicsView):
 
         self.cpu_busy = True
         try:
+            empties = 64 - (self.board.B | self.board.W).bit_count()
+            log_event("game.cpu", "search_start", ply=self.board.ply, stm=self.board.stm, empties=empties)
             # Get strength profile for current player
             strength_name = self.cpu_black_strength if self.board.stm == 0 else self.cpu_white_strength
             profile = get_strength_profile(strength_name)
             
             # Set up search limits based on strength profile
+            endgame_threshold = get_solver_threshold()
             limits = SearchLimits(
                 max_depth=profile.depth,
                 time_ms=profile.soft_time_ms,
                 node_cap=500_000,  # Reasonable limit for GUI responsiveness
-                endgame_exact_empties=12
+                endgame_exact_empties=endgame_threshold
             )
             
             # Reset per-search counters to avoid hitting node cap across moves
@@ -371,8 +380,17 @@ class BoardWidget(QGraphicsView):
                 # Make the move
                 self.board, _ = make_move(self.board, final_move)
                 self.last_move_sq = final_move
-                log_event("game.move", "cpu", square=final_move, stm=1-self.board.stm, 
-                         strength=strength_name, depth=result.depth, nodes=result.nodes)
+                log_event(
+                    "game.move",
+                    "cpu",
+                    square=final_move,
+                    stm=1 - self.board.stm,
+                    strength=strength_name,
+                    depth=result.depth,
+                    nodes=result.nodes,
+                    time_ms=result.time_ms,
+                    score_cp=result.score_cp,
+                )
                 
                 # Track move information for UI  
                 player_name = "Black" if (1 - self.board.stm) == 0 else "White"
@@ -385,6 +403,7 @@ class BoardWidget(QGraphicsView):
             else:
                 # Failsafe: if search produced no move, pick a legal move if any
                 if legal_moves_mask(self.board) != 0:
+                    log_event("game.cpu", "search_no_move_fallback", ply=self.board.ply)
                     self._play_fallback_move()
                 else:
                     # No legal moves indeed; emit and reschedule after pass handling
