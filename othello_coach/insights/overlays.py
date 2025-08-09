@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
-from othello_coach.engine.board import Board, make_move
-from othello_coach.engine.movegen_fast import legal_moves_mask
+from othello_coach.engine.board import Board, make_move, legal_moves_mask
 from .features import extract_features
 
 
 def mobility_heat(board: Board) -> Dict[int, int]:
-    mask = legal_moves_mask(board.B, board.W, board.stm)
+    mask = legal_moves_mask(board)
     moves = []
     m = mask
     while m:
@@ -26,7 +25,7 @@ def mobility_heat(board: Board) -> Dict[int, int]:
 
 
 def stability_heat(board: Board) -> Dict[int, int]:
-    mask = legal_moves_mask(board.B, board.W, board.stm)
+    mask = legal_moves_mask(board)
     heat: Dict[int, int] = {}
     m = mask
     count = 0
@@ -116,7 +115,7 @@ def corner_tension(board: Board) -> List[Tuple[int, int, str]]:
     side to secure a corner within 2 plies (simple approximation).
     """
     corners = [0, 7, 56, 63]
-    mask = legal_moves_mask(board.B, board.W, board.stm)
+    mask = legal_moves_mask(board)
     # Safeguard: if many legal moves, only consider top-3 by resulting mobility
     candidates: List[int] = []
     m = mask
@@ -128,7 +127,7 @@ def corner_tension(board: Board) -> List[Tuple[int, int, str]]:
         scored: List[Tuple[int, int]] = []
         for sq in candidates:
             b2, _ = make_move(board, sq)
-            mob = legal_moves_mask(b2.B, b2.W, b2.stm).bit_count()
+            mob = legal_moves_mask(b2).bit_count()
             scored.append((mob, sq))
         scored.sort(reverse=True)
         candidates = [sq for _, sq in scored[:3]]
@@ -136,7 +135,7 @@ def corner_tension(board: Board) -> List[Tuple[int, int, str]]:
     arrows: List[Tuple[int, int, str]] = []
     for sq in candidates:
         b2, _ = make_move(board, sq)
-        opp_moves = legal_moves_mask(b2.B, b2.W, b2.stm)
+        opp_moves = legal_moves_mask(b2)
         for c in corners:
             if opp_moves & (1 << c):
                 arrows.append((sq, c, "opens"))
@@ -154,13 +153,13 @@ def corner_tension(board: Board) -> List[Tuple[int, int, str]]:
                 r = lsb2.bit_length() - 1
                 mm ^= lsb2
                 bb, _ = make_move(b2, r)
-                mob = legal_moves_mask(bb.B, bb.W, bb.stm).bit_count()
+                mob = legal_moves_mask(bb).bit_count()
                 if mob < best_mob:
                     best_mob = mob
                     best_reply = bb
             b3 = best_reply if best_reply is not None else b2
         if b3 is not None:
-            our_moves = legal_moves_mask(b3.B, b3.W, b3.stm)
+            our_moves = legal_moves_mask(b3)
             for c in corners:
                 if our_moves & (1 << c):
                     arrows.append((sq, c, "secures"))

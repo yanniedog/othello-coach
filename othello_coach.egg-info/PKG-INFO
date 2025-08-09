@@ -30,7 +30,7 @@ Project-URL: Repository, https://example.com/othello-coach/repo
 Keywords: othello,reversi,engine,gui,coaching
 Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3 :: Only
-Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.12
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Classifier: Intended Audience :: End Users/Desktop

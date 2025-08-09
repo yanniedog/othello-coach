@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene
 from PyQt6.QtGui import QBrush, QColor, QPen
-from PyQt6.QtCore import QRectF, Qt, QPointF
+from PyQt6.QtCore import QRectF, Qt, QPointF, QElapsedTimer
 
 from ..engine.board import start_board, legal_moves_mask, make_move, compute_hash, Board
 from ..insights.overlays import mobility_heat as ov_mobility_heat
@@ -63,7 +63,7 @@ class BoardWidget(QGraphicsView):
         # Overlays
         try:
             if self.overlay_flags.get("mobility"):
-                t0 = Qt.QElapsedTimer()
+                t0 = QElapsedTimer()
                 t0.start()
                 heat = ov_mobility_heat(self.board)
                 for sq, val in heat.items():
@@ -74,7 +74,7 @@ class BoardWidget(QGraphicsView):
                     s.addEllipse(rect, QPen(Qt.PenStyle.NoPen), QBrush(color))
                 log_event("ui.board", "overlay_mobility", ms=int(t0.elapsed()))
             if self.overlay_flags.get("stability"):
-                t0 = Qt.QElapsedTimer(); t0.start()
+                t0 = QElapsedTimer(); t0.start()
                 heat = ov_stability_heat(self.board)
                 for sq, val in heat.items():
                     r, c = divmod(sq, 8)
@@ -84,7 +84,7 @@ class BoardWidget(QGraphicsView):
                     s.addEllipse(rect, QPen(Qt.PenStyle.NoPen), QBrush(color))
                 log_event("ui.board", "overlay_stability", ms=int(t0.elapsed()))
             if self.overlay_flags.get("parity"):
-                t0 = Qt.QElapsedTimer(); t0.start()
+                t0 = QElapsedTimer(); t0.start()
                 pm = ov_parity_map(self.board)
                 for sq in pm.get("odd", []):
                     r, c = divmod(sq, 8)
@@ -96,7 +96,7 @@ class BoardWidget(QGraphicsView):
                     s.addRect(rect, QPen(QColor(255, 0, 0)))
                 log_event("ui.board", "overlay_parity", ms=int(t0.elapsed()))
             if self.overlay_flags.get("corner"):
-                t0 = Qt.QElapsedTimer(); t0.start()
+                t0 = QElapsedTimer(); t0.start()
                 arrows = ov_corner_tension(self.board)
                 for frm, corner, kind in arrows:
                     r1, c1 = divmod(frm, 8)
@@ -105,8 +105,9 @@ class BoardWidget(QGraphicsView):
                     pen.setWidth(2)
                     s.addLine(c1 * square + square/2, r1 * square + square/2, c2 * square + square/2, r2 * square + square/2, pen)
                 log_event("ui.board", "overlay_corner", ms=int(t0.elapsed()))
-        except Exception:
+        except Exception as e:
             # overlays are best-effort; never break board drawing
+            # Uncomment for debugging: print(f"Warning: Overlay rendering failed: {e}")
             pass
 
     def _ensure_playable_state(self) -> None:

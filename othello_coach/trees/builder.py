@@ -4,11 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from othello_coach.engine.board import Board
-from othello_coach.engine.movegen_fast import legal_moves_mask
-from othello_coach.engine.board import make_move
+from othello_coach.engine.board import Board, make_move, legal_moves_mask
 from .presets import get_preset
-from othello_coach.engine.eval import evaluate
 
 
 @dataclass
@@ -31,7 +28,7 @@ def build_tree(root: Board, preset: str, depth: int = 4, width: int = 8, time_ms
         # best-first: pop max score
         frontier.sort(key=lambda t: (t[0], t[1]), reverse=True)
         cur_score, cur_novelty, cur, d = frontier.pop(0)
-        mask = legal_moves_mask(cur.B, cur.W, cur.stm)
+        mask = legal_moves_mask(cur)
         m = mask
         w = 0
         while m and w < width and d < depth:
