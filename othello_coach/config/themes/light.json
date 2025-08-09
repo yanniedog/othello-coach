@@ -1,0 +1,8 @@
+{
+  "name": "light",
+  "background": "#ffffff",
+  "foreground": "#202020",
+  "accent": "#2e7d32",
+  "warning": "#ef6c00",
+  "error": "#c62828"
+}

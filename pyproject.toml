@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "othello-coach"
+version = "1.0.0"
+description = "Local Othello/Reversi coach: strong engine, insights, trees, and UI"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+authors = [
+  { name = "Othello Coach", email = "noreply@example.com" }
+]
+license = { file = "LICENSE" }
+keywords = ["othello", "reversi", "engine", "gui", "coaching"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: End Users/Desktop",
+  "Topic :: Games/Entertainment :: Board Games",
+]
+
+dependencies = [
+  "PyQt6==6.7.*",
+  "PyQt6-Qt6==6.7.*",
+  "SQLAlchemy==2.0.*",
+  "alembic==1.13.*",
+  "rich==13.7.*",
+  "orjson==3.10.*",
+  "msgspec==0.18.*",
+  "Jinja2==3.1.*",
+  "hypothesis==6.112.*",
+]
+
+[project.optional-dependencies]
+graphviz = ["pygraphviz==1.13.*"]
+
+[project.urls]
+Homepage = "https://example.com/othello-coach"
+Repository = "https://example.com/othello-coach/repo"
+
+[tool.setuptools]
+packages = { find = { where = ["."], include = ["othello_coach*"], exclude = ["tests*"] } }
+include-package-data = true
+
+[tool.setuptools.package-data]
+"othello_coach.config.web" = ["*.html", "*.js"]
+"othello_coach.config.themes" = ["*.json"]
+"othello_coach.openings" = ["*.json"]
+"othello_coach.db" = ["*.sql"]
+"othello_coach.engine" = ["perft_pack.json"]
+
+[project.scripts]
+othello-coach = "othello_coach.tools.cli:main"
+othello-perft = "othello_coach.tools.perft_cli:main"
+othello-tree = "othello_coach.tools.tree_cli:main"
+othello-diag = "othello_coach.tools.diag:main"
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+strict = false

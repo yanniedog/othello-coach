@@ -1,0 +1,450 @@
+V1.0 – COMPLETE, EXHAUSTIVE, IMPLEMENTATION-READY SPECIFICATION
+
+1) PURPOSE
+A local, private Othello/Reversi coach that (a) plays strongly at multiple strengths, (b) explains its moves with concrete reasons, (c) visualises insight overlays, (d) builds preset goal-directed variation trees, and (e) persists knowledge. It must install and run on Windows 10/11, macOS 12+, and Linux x86_64 without external services.
+
+2) REFERENCE HARDWARE & SERVICE-LEVEL TARGETS
+Reference machine for all budgets: 8 logical cores @ 3.0–4.0 GHz, 16 GB RAM, NVMe SSD.
+• Overlay probe (2–3 ply, ≤10 legal moves): ≤150 ms for 90th percentile positions.  
+• Start position NPS at depth-ordered search: ≥250k nodes/s (pure Python).  
+• Tree build (depth ≤8, width ≤12, preset goals): ≤2 s.  
+• UI main thread frame budget: 16 ms (60 FPS), no blocking calls.  
+• DB writer: 0 “database is locked” errors under 4 workers sending events for 60 s; average flush < 50 ms; WAL checkpoint < 500 ms.
+
+3) RUNTIME GUARANTEES
+• All data stays local. No network calls.  
+• Deterministic analysis when the same configuration and random seed are used.  
+• UI is responsive under engine load thanks to background workers and a single writer process.
+
+4) REPOSITORY LAYOUT (CREATE EXACTLY)
+othello_coach/
+  pyproject.toml
+  README.md
+  LICENSE
+  othello_coach/
+    __init__.py
+    config/
+      defaults.toml
+      themes/
+        dark.json
+        light.json
+        high_contrast.json
+      web/                 # assets for WebEngine viewer (Cytoscape + ECharts bundles)
+        index.html
+        cytoscape.min.js
+        echarts.min.js
+    engine/
+      __init__.py
+      board.py             # Board dataclass, Zobrist, make/undo
+      movegen_ref.py       # simple, independent generator (spec ref)
+      movegen_fast.py      # precomputed rays, production path
+      eval.py              # features + linear eval
+      tt.py                # transposition table API + dict backend
+      search.py            # ID alpha–beta, aspiration, LMR, killers, history, PV
+      solver.py            # exact solver for ≤12 empties
+      strength.py          # fixed strength profiles
+      perft.py             # perft driver + reference pack loader
+    insights/
+      __init__.py
+      features.py          # mobility, potential mobility, frontier, parity, stability proxy, corner access, X/C risk
+      rationale.py         # delta→rationale mapping + conflict resolver
+      taxonomy.py          # mistake tagging thresholds
+      overlays.py          # overlay computations
+    trees/
+      __init__.py
+      presets.py           # score_side, min_opp_mob, early_corner
+      builder.py           # best-first expansion, transpositions, width/time caps
+      export.py            # JSON, DOT, PNG via headless capture
+    openings/
+      __init__.py
+      book.json            # small curated book (canonical lines)
+      recogniser.py        # longest-prefix matching
+    db/
+      __init__.py
+      schema.sql           # DDL (see §17)
+      writer.py            # single writer process + IPC Queue
+      queries.py           # read helpers
+      retention.py         # dedup, caps, VACUUM scheduling
+      migrate.py           # schema version check/upgrade (SQLite only)
+    ui/
+      __init__.py
+      app.py               # QApplication bootstrap
+      main_window.py
+      board_widget.py      # QGraphicsView board
+      insights_dock.py
+      tree_view.py         # WebEngine viewer + QGraphics fallback
+      actions.py           # shortcuts and QAction wiring
+      themes.py            # load theme palettes + WCAG checks
+    tools/
+      cli.py               # entry point router
+      perft_cli.py
+      tree_cli.py
+      diag.py              # diagnostics bundle creator
+    tests/
+      test_perft.py
+      test_movegen_crosscheck.py
+      test_board_hash_and_undo.py
+      test_eval_features.py
+      test_search_core.py
+      test_solver_exact.py
+      test_insights_and_rationales.py
+      test_db_concurrency.py
+      test_ui_smoke.py
+
+5) DEPENDENCIES (PINNED WITH UPPER BOUNDS)
+Python 3.12.10  
+PyQt6==6.7.*  
+PyQt6-Qt6==6.7.*  (ensures Qt 6.7 series)  
+SQLAlchemy==2.0.*  
+alembic==1.13.*  
+rich==13.7.*  
+orjson==3.10.*  
+msgspec==0.18.*  
+Jinja2==3.1.*  
+hypothesis==6.112.*  
+pygraphviz==1.13.*  (optional; disable gracefully if unavailable)
+
+6) CONFIGURATION (INSTALL TO USER HOME)
+Path: ~/.othello_coach/config.toml – load at startup, create if missing with defaults below.
+[engine]
+tt_mb = 128
+aspiration_cp = 50
+lmr = "normal"                  # "conservative" | "normal" | "aggressive"
+endgame_exact_empties = 12
+
+[strength]
+profile = "elo_1600"            # see §12
+
+[ui]
+theme = "dark"                  # dark | light | high_contrast
+reduced_motion = false
+overlays = ["mobility","parity","stability"]
+
+[db]
+path = "~/.othello_coach/coach.sqlite"
+busy_timeout_ms = 4000
+wal_checkpoint_mb = 100
+auto_vacuum_days = 14
+per_position_cap = 500
+
+[feature_flags]
+webengine = true
+gdl_authoring = false           # v1.1 enables
+
+7) BOARD REPRESENTATION & HASHING
+• Bitboards: int64 for Black (B) and White (W), A1=0..H8=63 row-major.  
+• Side-to-move: stm ∈ {0,1} where 0=Black, 1=White.  
+• Board dataclass:
+  class Board(TypedDict):
+      B: int  # 64-bit mask
+      W: int  # 64-bit mask
+      stm: int
+      ply: int
+      hash: int  # 64-bit Zobrist cached
+
+• Zobrist: 64×2 random 64-bit numbers + one for stm; seed constant stored in engine/board.py.  
+• Hash update on make/undo by XORing relevant piece and stm keys.
+
+8) COORDINATES & CONSTANTS
+• Squares: 0..63, files A..H, ranks 1..8; A1=0, H1=7, A8=56, H8=63.  
+• Masks: NOT_A, NOT_H (and NOT_AB, NOT_GH) defined as 64-bit constants.  
+• Direction deltas: N=+8, S=−8, E=+1, W=−1, NE=+9, NW=+7, SE=−7, SW=−9.
+
+9) MOVE GENERATION (TWO IMPLEMENTATIONS)
+9.1 movegen_ref.py (reference, independent, scalar)
+• For each direction, walk from candidate square, accumulate opponent bits until you reach stm bit; legal if chain ends on stm and at least one opponent bit was seen.  
+• Generate legal mask by scanning all empties.
+
+9.2 movegen_fast.py (production, precomputed rays)
+• Precompute for each square and direction: “ray until edge” masks.  
+• Use directional shift-and-mask trick:
+  captures_dir = 0
+  x = opponent & ray_mask
+  t = x & shift(own, dir)
+  while t: captures_dir |= t; t = x & shift(t, dir)
+  moves_dir = shift(captures_dir, −dir) & empty
+• Legal mask = OR over 8 directions.  
+• For a move, compute flip mask by re-traversing each direction from move square.
+
+10) MAKE/UNDO
+• make_move(Board, sq) → Board’:  
+  – If ((1<<sq) & legal_mask)==0 → invalid.  
+  – Compute flip mask F; if F==0 → invalid.  
+  – If stm==Black: B’ = B | (1<<sq) | F; W’ = W & ~F; else mirrored.  
+  – Toggle stm; increment ply; update Zobrist via XORs.  
+• undo uses a StackFrame: (move_sq, flipped_mask, prev_hash, prev_stm, prev_ply).
+
+11) EVALUATION (CENTIPAWNS, POV = stm)
+Phase φ = empties/64. Score = Σ weight_i * feature_i with weights:
+• Mobility diff M = legal(stm) − legal(!stm) → +80  
+• Potential mobility PM (opponent discs adjacent to empties) → +20  
+• Corner delta C (owned corners stm − opp) → +900  
+• X/C penalties XC (occupancy on X/C squares scaled by adjacent occupancy) → −140  
+• Frontier diff F (discs adjacent to empties stm − opp) → −18  
+• Disc diff D × (1 − φ) → +2  
+• Parity pressure P (odd-region control near end; see insights/features.py) → +40  
+• Stability proxy S (anchored discs via flood from corners and safe edges) → +25
+All features memoised per hash for reuse by overlays and rationales.
+
+12) FIXED STRENGTH PROFILES (V1.0)
+Name, depth, soft time, noise temp, blunder prob, top-k jitter:
+• elo_400:   d=2,  150 ms, 1.0,  0.10, k=3  
+• elo_800:   d=4,  300 ms, 0.6,  0.05, k=3  
+• elo_1400:  d=6,  500 ms, 0.3,  0.02, k=2  
+• elo_2000:  d=9,  1200 ms,0.1,  0.005,k=2  
+• elo_2300:  d=12, 2500 ms,0.0,  0.0,  k=1  
+• max:       d=14, 4000 ms,0.0,  0.0,  k=1
+Move selection at low ELO: softmax over top-k by score/temp; apply blunder with stated probability by sampling a suboptimal move within [−300, −50] cp of best.
+
+13) SEARCH ENGINE
+• Iterative deepening (ID) with aspiration windows: start ±50 cp; on fail widen to ±100 then ±200.  
+• Alpha–beta negamax, fail-soft returns.  
+• Move ordering priority: TT move → killer1/2 → corners → history (descending) → mobility ascending.  
+• Late Move Reductions (LMR): depth d≥3; candidate’s ordered index i≥1; not TT move; not killer; not corner; and resulting stm mobility ≥ min(3, current_mobility). Reduction r = floor(log2(1+i)), cap r ≤ d−2. Verify via tests.  
+• Null-move pruning disabled.  
+• Endgame exact solver used when empties ≤ config.endgame_exact_empties; solver returns disc_diff×100 cp.  
+• PV table stored by depth; update on improving best or beta cuts at PV nodes.  
+• Time management: `time_ms`, `max_depth`, and `node_cap` limits; overlay probes use shallow fixed depth (2–3) with 150 ms cap.
+
+14) TRANSPOSITION TABLE (TT) – PYTHON BACKEND
+• Key: 64-bit Zobrist → Entry(depth:int8, score:int16, flag:{EXACT,LOWER,UPPER}, best:int6 or −1, gen:uint8).  
+• Generation increments per ID iteration root.  
+• Replacement: if empty → store; else replace if new_depth > old_depth or new_gen − old_gen ≥ 2.  
+• Stats: lookups, hits, stores, replacements, bounds_used. Expose via diagnostics.
+
+15) INSIGHTS – FEATURES, RATIONALES, TAXONOMY, OVERLAYS
+15.1 Feature extraction (insights/features.py)
+• mobility, potential_mobility, frontier_count, stability_proxy, parity_regions (list of regions with size and controller), corner_access_2ply (bools), x_c_risk (scaled). All memoised by hash.
+
+15.2 Rationale generation (insights/rationale.py)
+• Given best move vs user move, compute Δfeatures.  
+• Score each candidate reason by |Δ| × normalised eval weight.  
+• Conflict resolver: if top two reasons pull opposite (eg +mobility/−parity), display both with a “trade-off” tag.  
+• Standard templates (exact strings with placeholders):
+  – “Opens +{dM} moves next and reduces their replies by {dOppM}.”  
+  – “Preserves odd parity in the {region} region.”  
+  – “Avoids an X-square trap near {corner}.”  
+  – “Increases stable discs by {dS} this turn.”  
+  – “Gains corner control on {corner} safely within 2 plies.”
+
+15.3 Mistake taxonomy (insights/taxonomy.py)
+• Mobility leak: ΔMobility ≤ −3 and ΔOppMob ≥ +2  
+• Parity flip: controller of an odd region (size ≥5) switches within 2 plies  
+• Frontier bloat: ΔFrontier ≥ +3 when empties ≥24  
+• X-square poison: moved to X-square while corner available to opponent within 2 plies and eval worsens ≥100 cp  
+• Tempo waste: ΔScore ≤ −60 cp and none of the above triggers
+
+15.4 Overlays (insights/overlays.py)
+• Mobility heat – pip intensity ∝ resulting stm mobility, normalised per position.  
+• Parity map – colour empties by odd/even region; outline “must-move soon” border cells.  
+• Stability heat – discs shaded by permanence likelihood.  
+• Corner tension – arrows marking squares that open/close a corner within 2 plies.  
+• Safeguard: if legal moves >10, compute overlays for top-k ordered candidates only and label “approximate”.
+
+16) TREES – PRESET GOALS ONLY (V1.0)
+16.1 Presets (trees/presets.py)
+• score_side(side=auto from root) – maximise eval for that side.  
+• min_opp_mob – minimise opponent’s next-move count.  
+• early_corner – reward +500 when a corner can be safely secured within ≤4 plies.
+
+16.2 Builder (trees/builder.py)
+• Best-first expansion with priority tuple [primary_goal_score, pv_bonus, novelty].  
+• Width limit per ply (default 12), depth limit (default 8), time cap 2000 ms.  
+• Transposition-aware nodes keyed by Zobrist; edges carry (from_hash,to_hash,move,score).  
+• Novelty (v1.0 simple): 1.0 if continuation not in openings book prefix, else 0.3.
+
+16.3 Export & Viewer (trees/export.py, ui/tree_view.py)
+• JSON schema: {"root": int, "nodes": {hash: {"stm":0|1,"score":int,"attrs":{...}}}, "edges":[{"from":int,"to":int,"move":int,"score":int}]}  
+• DOT export with node labels “score/attrs”.  
+• PNG export via headless WebEngine capture.  
+• UI uses Qt WebEngine if available; otherwise QGraphics fallback with pan/zoom.
+
+17) DATABASE – DDL, PRAGMAS, WRITER PROCESS
+17.1 PRAGMAS (on connection open)
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+PRAGMA cache_size=-131072;
+PRAGMA mmap_size=268435456;
+
+17.2 DDL (db/schema.sql) – USE EXACTLY
+CREATE TABLE IF NOT EXISTS positions(
+  hash INTEGER PRIMARY KEY,
+  black INTEGER NOT NULL,
+  white INTEGER NOT NULL,
+  stm   INTEGER NOT NULL,
+  ply   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS analyses(
+  hash INTEGER NOT NULL,
+  depth INTEGER NOT NULL,
+  score INTEGER NOT NULL,
+  flag  INTEGER NOT NULL,
+  best_move INTEGER,
+  nodes INTEGER NOT NULL,
+  time_ms INTEGER NOT NULL,
+  engine_ver TEXT NOT NULL,
+  PRIMARY KEY(hash, depth)
+);
+CREATE INDEX IF NOT EXISTS idx_analyses_dge8 ON analyses(depth) WHERE depth >= 8);
+CREATE TABLE IF NOT EXISTS moves(
+  from_hash INTEGER NOT NULL,
+  move INTEGER NOT NULL,
+  to_hash INTEGER NOT NULL,
+  visits INTEGER NOT NULL,
+  wins INTEGER NOT NULL,
+  draws INTEGER NOT NULL,
+  losses INTEGER NOT NULL,
+  avg_score REAL NOT NULL,
+  novelty REAL NOT NULL,
+  PRIMARY KEY(from_hash, move)
+);
+CREATE INDEX IF NOT EXISTS idx_moves_to ON moves(to_hash);
+CREATE TABLE IF NOT EXISTS features(
+  hash INTEGER PRIMARY KEY,
+  mobility INTEGER,
+  pot_mob INTEGER,
+  frontier INTEGER,
+  stability INTEGER,
+  parity INTEGER,
+  corners INTEGER,
+  x_squares INTEGER,
+  computed_engine_ver TEXT NOT NULL,
+  ts DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS games(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  start_hash INTEGER NOT NULL,
+  result INTEGER NOT NULL,
+  length INTEGER NOT NULL,
+  tags TEXT,
+  moves TEXT NOT NULL,
+  started_at DATETIME,
+  finished_at DATETIME
+);
+CREATE TABLE IF NOT EXISTS notes(
+  hash INTEGER PRIMARY KEY,
+  text TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text);
+CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, text) VALUES (new.hash, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, text) VALUES('delete', old.hash, old.text);
+  INSERT INTO notes_fts(rowid, text) VALUES (new.hash, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, text) VALUES('delete', old.hash, old.text);
+END;
+
+17.3 WRITER PROCESS (db/writer.py)
+• Single process owns DB connection.  
+• IPC protocol: multiprocessing.Queue sending dicts:
+  {"op":"pos"|"ana"|"move"|"feat"|"game"|"note", "payload":{…}}  
+• Flush batch on either 250 ms timer or 500 queued events.  
+• WAL checkpoint when WAL file exceeds config.wal_checkpoint_mb or every 10 min, whichever first.  
+• Retention: per_position_cap on moves table, drop lowest visits; VACUUM every 14 days.
+
+18) OPENING BOOK
+• openings/book.json – minimal curated lines as arrays of move indices; versioned.  
+• recogniser.py: longest-prefix of the current move sequence after transposition normalisation.  
+• GUI tag shows name and variation; at low ELO, book only biases evaluation display (no hard forcing).
+
+19) GUI SPECIFICS
+19.1 App skeleton
+• ui/app.py creates QApplication, loads config, instantiates MainWindow, starts writer process, connects engine worker threads.
+
+19.2 Main window
+• Panes: Board (left), Insights dock (right), Tree viewer (bottom or right).  
+• Themes: load from config/themes/*.json; enforce WCAG AA contrast.
+
+19.3 Board widget
+• QGraphicsView + scene for board and discs; HiDPI-aware.  
+• Hover shows flip previews; legal move pips visible for human side.  
+• Right-click a legal move → 2-ply counterfactual with Δscore, Δfeatures.  
+• Undo/redo stack; keyboard shortcuts: N new, Z/Y undo/redo, arrows step moves, Space best move, O toggle overlays, T rebuild tree.  
+• All engine work in background thread; signals/slots update UI.
+
+19.4 Insights dock
+• Score bar with cp, PV list, rationale cards (top 2), toggles for overlays (mobility, parity, stability, corner tension), opening tag if applicable.
+
+19.5 Tree viewer
+• WebEngine view using assets in config/web; if feature_flags.webengine=false or import fails, switch to QGraphics fallback.
+
+20) CLIs (tools/*.py)
+• othello-coach – launch GUI.  
+• othello-perft --depth 6 [--position <moves|fen>] – runs perft pack; outputs counts and timing.  
+• othello-tree --preset <score_side|min_opp_mob|early_corner> --depth 8 --width 12 --root <hash> --out tree.json  
+• othello-diag --bundle out.zip – creates diagnostics bundle (config, logs, TT stats, DB pragmas, small replay script).
+
+21) TESTS & CI GATES
+21.1 Perft pack (tests/test_perft.py)
+• 12 canonical positions to depth 6, with SHA256 of concatenated counts per depth.  
+• movegen_ref and movegen_fast must match exactly.
+
+21.2 Cross-checks
+• For 10k random legal positions: legal masks equal across generators; for each legal move, make→undo returns identical board; Zobrist incremental equals recomputed.
+
+21.3 Search regression (tests/test_search_core.py)
+• 500 tricky positions; depth 6 PV prefix of 2 moves must match baseline; score tolerance ±20 cp. Baseline stored in repo.
+
+21.4 Solver exactness (tests/test_solver_exact.py)
+• All ≤12 empty positions from a generated set produce solver score = disc_diff×100.
+
+21.5 Insights (tests/test_insights_and_rationales.py)
+• Rationale present for ≥95% suggested moves; taxonomy thresholds trigger correctly on crafted positions.
+
+21.6 DB concurrency (tests/test_db_concurrency.py)
+• 4 worker processes spam mixed events for 60 s → zero busy errors; mean flush < 50 ms.
+
+21.7 UI smoke (tests/test_ui_smoke.py)
+• Headless (QT_QPA_PLATFORM=offscreen) – open main window, draw board, toggle overlays, build a small tree, no exceptions.
+
+21.8 CI
+• GitHub Actions matrix: windows-latest, macos-latest, ubuntu-latest.  
+• Lint (ruff), type-check (mypy), unit tests, perft, regression, concurrency.  
+• Performance lane: run startpos depth-8 ID; record NPS; allow ±10% vs previous commit median across 3 runs; alert on 2 consecutive regressions.
+
+22) LOGGING & DIAGNOSTICS
+• Structured logs (JSON via orjson) – DEBUG for engine, INFO for GUI.  
+• Include timestamps, module, event, key metrics (nodes, NPS, TT hit rate, overlay latency).  
+• diag bundle includes: config.toml, env versions, DB pragmas, last 5k log lines, TT stats, perf snapshot, hardware info, replay script for last move.
+
+23) SECURITY & PRIVACY
+• No telemetry.  
+• No network.  
+• WebEngine loads only local assets; file and HTTP schemes disabled.  
+• Safe file dialogs; no arbitrary code eval.
+
+24) PACKAGING
+• Build wheels for win_amd64, macOS universal2, manylinux2014_x86_64.  
+• Optional pygraphviz dependency is extra; if missing, export PNG via WebEngine capture only.  
+• Provide pipx support; first run initialises DB and config, performs self-test, shows green tick or diagnostics link.
+
+25) ACCEPTANCE CHECKLIST (BLOCKERS)
+• Perft pack SHA matches; depth-6 counts exact.  
+• Overlay probe latency ≤150 ms at 90th percentile on reference host.  
+• Tree preset build ≤2 s; JSON/DOT/PNG exports valid.  
+• Rationale appears for ≥95% coach suggestions; taxonomy applied per thresholds.  
+• DB writer under load passes concurrency test; WAL checkpoint bounded.  
+• Wheels install and launch on Win/macOS/Linux; WebEngine fallback path verified.  
+• No UI stalls >100 ms across a 2-hour mixed session (engine think + DB writes + tree builds).
+
+26) BUILD ORDER (FOLLOW EXACTLY)
+1. Create repo skeleton, config, themes, web assets, pyproject.  
+2. Implement movegen_ref, then movegen_fast; add perft; make both pass cross-checks.  
+3. Implement board make/undo + Zobrist; extend perft to depth 6 on pack; store SHA.  
+4. Implement eval features in insights/features.py and engine/eval.py; unit tests for monotonicity (eg corner +900 strictly improves).  
+5. Implement TT, killers, history, LMR rule; PV; aspiration ladder.  
+6. Implement solver ≤12 empties; integrate threshold.  
+7. Implement strength profiles and stochastic selection.  
+8. Implement insights rationales, taxonomy, overlays; unit tests.  
+9. Implement DB writer, schema, queries, retention; concurrency test.  
+10. Implement GUI board + insights dock + counterfactual explorer; shallow overlay probes with 150 ms cap.  
+11. Implement trees presets + builder + exports; viewer + fallback.  
+12. Implement opening recogniser; show tag.  
+13. Implement CLIs per §20; diagnostics bundle.  
+14. Wire CI; add performance lane; ensure all gates pass.  
+15. Package wheels; run smoke on all OSes; ship v1.0.
+
+— END OF V1.0 SPEC —

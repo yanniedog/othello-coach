@@ -1,0 +1,74 @@
+Metadata-Version: 2.4
+Name: othello-coach
+Version: 1.0.0
+Summary: Local Othello/Reversi coach: strong engine, insights, trees, and UI
+Author-email: Othello Coach <noreply@example.com>
+License: MIT License
+        
+        Copyright (c) 2025 Othello Coach
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Homepage, https://example.com/othello-coach
+Project-URL: Repository, https://example.com/othello-coach/repo
+Keywords: othello,reversi,engine,gui,coaching
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Topic :: Games/Entertainment :: Board Games
+Requires-Python: <3.13,>=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: PyQt6==6.7.*
+Requires-Dist: PyQt6-Qt6==6.7.*
+Requires-Dist: SQLAlchemy==2.0.*
+Requires-Dist: alembic==1.13.*
+Requires-Dist: rich==13.7.*
+Requires-Dist: orjson==3.10.*
+Requires-Dist: msgspec==0.18.*
+Requires-Dist: Jinja2==3.1.*
+Requires-Dist: hypothesis==6.112.*
+Provides-Extra: graphviz
+Requires-Dist: pygraphviz==1.13.*; extra == "graphviz"
+Dynamic: license-file
+
+# Othello Coach
+
+Local, private Othello/Reversi coach with strong engine, insights, trees, and a Qt UI. No network calls.
+
+Quick start
+
+- Windows PowerShell
+  - Create venv: `python -m venv .venv; . .\.venv\Scripts\Activate.ps1`
+  - Install: `pip install -e .`
+  - Perft: `othello-perft --depth 2`
+  - GUI: `othello-coach`
+
+CLI tools
+
+- Perft with move list input:
+  - `othello-perft --depth 3 --position e6d6c5`
+
+Diagnostics
+
+- Create initial config and DB and bundle diagnostics:
+  - `othello-diag --bundle diag.zip`

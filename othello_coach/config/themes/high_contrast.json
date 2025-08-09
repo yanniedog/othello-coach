@@ -1,0 +1,8 @@
+{
+  "name": "high_contrast",
+  "background": "#000000",
+  "foreground": "#ffffff",
+  "accent": "#00ff00",
+  "warning": "#ffff00",
+  "error": "#ff0000"
+}

@@ -1,0 +1,5 @@
+[console_scripts]
+othello-coach = othello_coach.tools.cli:main
+othello-diag = othello_coach.tools.diag:main
+othello-perft = othello_coach.tools.perft_cli:main
+othello-tree = othello_coach.tools.tree_cli:main

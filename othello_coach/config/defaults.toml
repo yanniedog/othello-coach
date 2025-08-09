@@ -1,0 +1,24 @@
+[engine]
+tt_mb = 128
+aspiration_cp = 50
+lmr = "normal"
+endgame_exact_empties = 12
+
+[strength]
+profile = "elo_1400"
+
+[ui]
+theme = "dark"
+reduced_motion = false
+overlays = ["mobility","parity","stability"]
+
+[db]
+path = "~/.othello_coach/coach.sqlite"
+busy_timeout_ms = 4000
+wal_checkpoint_mb = 100
+auto_vacuum_days = 14
+per_position_cap = 500
+
+[feature_flags]
+webengine = true
+gdl_authoring = false
