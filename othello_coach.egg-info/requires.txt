@@ -7,6 +7,7 @@ orjson==3.10.*
 msgspec==0.18.*
 Jinja2==3.1.*
 hypothesis==6.112.*
+tomli==2.0.*
 
 [graphviz]
 pygraphviz==1.13.*

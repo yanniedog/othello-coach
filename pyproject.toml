@@ -7,7 +7,7 @@ name = "othello-coach"
 version = "1.0.0"
 description = "Local Othello/Reversi coach: strong engine, insights, trees, and UI"
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.10,<3.13"
 authors = [
   { name = "Othello Coach", email = "noreply@example.com" }
 ]
@@ -16,7 +16,7 @@ keywords = ["othello", "reversi", "engine", "gui", "coaching"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.10",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Intended Audience :: End Users/Desktop",
@@ -33,6 +33,7 @@ dependencies = [
   "msgspec==0.18.*",
   "Jinja2==3.1.*",
   "hypothesis==6.112.*",
+  "tomli==2.0.*",
 ]
 
 [project.optional-dependencies]
@@ -63,7 +64,7 @@ othello-diag = "othello_coach.tools.diag:main"
 line-length = 100
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.10"
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
