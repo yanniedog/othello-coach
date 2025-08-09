@@ -42,7 +42,9 @@ def run_app() -> int:
 
     # Load config and apply theme (default to dark)
     cfg = _load_config()
-    theme_name = (cfg.get("ui", {}) or {}).get("theme", "dark")
+    ui_cfg = (cfg.get("ui", {}) or {})
+    db_cfg = (cfg.get("db", {}) or {})
+    theme_name = ui_cfg.get("theme", "dark")
     try:
         theme = load_theme(theme_name)
         # Basic stylesheet application; detailed WCAG checks happen in themes module if needed
@@ -58,7 +60,14 @@ def run_app() -> int:
 
     # Start DB writer early and expose queue on the app for other components
     db_queue: mp.Queue = mp.Queue()
-    writer = DBWriter(str(DB_PATH), db_queue)
+    writer = DBWriter(
+        db_path=str(DB_PATH),
+        in_queue=db_queue,
+        busy_timeout_ms=int(db_cfg.get("busy_timeout_ms", 4000)),
+        wal_checkpoint_mb=int(db_cfg.get("wal_checkpoint_mb", 100)),
+        per_position_cap=int(db_cfg.get("per_position_cap", 500)),
+        auto_vacuum_days=int(db_cfg.get("auto_vacuum_days", 14)),
+    )
     writer.start()
 
     def _shutdown_writer() -> None:

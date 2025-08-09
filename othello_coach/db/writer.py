@@ -29,6 +29,8 @@ class DBWriter(mp.Process):
         checkpoint_interval_s: float = 600.0,
         busy_timeout_ms: int = 4000,
         wal_checkpoint_mb: int = 100,
+        per_position_cap: int = 500,
+        auto_vacuum_days: int = 14,
         log_path: Optional[str] = None,
     ):
         super().__init__(daemon=True)
@@ -42,6 +44,8 @@ class DBWriter(mp.Process):
         self.stats = {"received": 0, "applied": 0, "flushes": 0, "last_batch": 0}
         self.busy_timeout_ms = busy_timeout_ms
         self.wal_checkpoint_mb = wal_checkpoint_mb
+        self.per_position_cap = per_position_cap
+        self.auto_vacuum_days = auto_vacuum_days
         if log_path is None:
             default_lp = os.path.expanduser("~/.othello_coach/writer.log")
             self.log_path = pathlib.Path(default_lp)
@@ -86,6 +90,7 @@ class DBWriter(mp.Process):
         last_flush = time.monotonic()
         self._log("start", db_path=self.db_path)
         alive = True
+        last_vacuum_check = time.monotonic()
         while alive:
             try:
                 msg = self.in_queue.get(timeout=0.25)
@@ -103,6 +108,11 @@ class DBWriter(mp.Process):
                 with conn:
                     for m in self.batch:
                         self._apply(conn, m)
+                # Apply retention caps as part of batch commit
+                try:
+                    cap_moves_per_position(conn, self.per_position_cap)
+                except Exception:
+                    pass
                 t_ms = int((time.perf_counter() - t0) * 1000)
                 n = len(self.batch)
                 self.batch.clear()
@@ -123,6 +133,14 @@ class DBWriter(mp.Process):
                     pass
                 self.last_checkpoint = now
                 self._log("checkpoint")
+            # Auto VACUUM scheduling roughly every auto_vacuum_days
+            if now - last_vacuum_check > self.auto_vacuum_days * 86400:
+                try:
+                    conn.execute("VACUUM;")
+                except sqlite3.DatabaseError:
+                    pass
+                last_vacuum_check = now
+                self._log("vacuum")
             # Stall watchdog: if no progress for too long, exit
             if now - self.last_progress > self.stall_timeout_s:
                 try:

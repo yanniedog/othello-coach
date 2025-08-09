@@ -16,6 +16,20 @@ def register_actions(win: QMainWindow) -> None:
     # Toggle overlays
     win.action_toggle_overlays = QAction("Toggle Overlays", win)
     win.addAction(win.action_toggle_overlays)
+    # Quick keys for overlays per spec (O toggles all)
+    def _toggle_all() -> None:
+        try:
+            dock = getattr(win, "insights", None)
+            if dock is None:
+                return
+            on = not dock.mobility_cb.isChecked()
+            dock.mobility_cb.setChecked(on)
+            dock.parity_cb.setChecked(on)
+            dock.stability_cb.setChecked(on)
+            dock.corner_cb.setChecked(on)
+        except Exception:
+            pass
+    win.action_toggle_overlays.triggered.connect(_toggle_all)
     # Rebuild tree
     win.action_rebuild_tree = QAction("Rebuild Tree", win)
     win.addAction(win.action_rebuild_tree)

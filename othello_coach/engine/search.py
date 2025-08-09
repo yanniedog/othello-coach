@@ -17,6 +17,7 @@ class SearchLimits:
     max_depth: int = 6
     time_ms: int = 1000
     node_cap: int = 5_000_000
+    endgame_exact_empties: int = 12
 
 
 @dataclass
@@ -49,10 +50,15 @@ class Searcher:
             alpha = best_score - aspiration
             beta = best_score + aspiration
             score, line = self._negamax(board, depth, alpha, beta, start, limits, ply=0)
+            # Aspiration ladder per spec: widen to ±100 then ±200
             if score <= alpha or score >= beta:
-                alpha = -10_000
-                beta = 10_000
+                alpha = best_score - 100
+                beta = best_score + 100
                 score, line = self._negamax(board, depth, alpha, beta, start, limits, ply=0)
+                if score <= alpha or score >= beta:
+                    alpha = best_score - 200
+                    beta = best_score + 200
+                    score, line = self._negamax(board, depth, alpha, beta, start, limits, ply=0)
             best_score = score
             pv = line
             best_move = line[0] if line else None
@@ -66,7 +72,7 @@ class Searcher:
         if self.nodes >= limits.node_cap or (time.perf_counter() - start) * 1000 > limits.time_ms:
             return evaluate(board), []
         empties = 64 - (board.B | board.W).bit_count()
-        if empties <= 12:
+        if empties <= limits.endgame_exact_empties:
             return solve_exact(board), []
         if depth == 0:
             return evaluate(board), []

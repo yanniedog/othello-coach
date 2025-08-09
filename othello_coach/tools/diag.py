@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass
 
 from rich.console import Console
+import time
+import orjson
 
 console = Console()
 
@@ -15,6 +17,7 @@ CONFIG_PATH = CONFIG_HOME / "config.toml"
 DB_PATH = CONFIG_HOME / "coach.sqlite"
 DEFAULTS_PATH = pathlib.Path(__file__).resolve().parents[1] / "config" / "defaults.toml"
 SCHEMA_PATH = pathlib.Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+LOG_PATH = CONFIG_HOME / "writer.log"
 
 
 @dataclass
@@ -55,6 +58,21 @@ def install_and_init() -> InitResult:
     if cfg_new or db_new:
         console.print("[green]Initialised configuration and database[/green]")
     return InitResult(cfg_new, db_new)
+
+
+def log_event(module: str, event: str, **kwargs) -> None:
+    """Structured JSON log line to stdout and ~/.othello_coach/writer.log."""
+    payload = {"ts": time.time(), "module": module, "event": event}
+    payload.update(kwargs)
+    try:
+        line = orjson.dumps(payload).decode("utf-8")
+        print(line, flush=True)
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        # Never fail the app due to logging errors
+        pass
 
 
 def main() -> None:

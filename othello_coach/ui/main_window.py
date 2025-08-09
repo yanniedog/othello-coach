@@ -39,6 +39,8 @@ class MainWindow(QMainWindow):
         # Actions and shortcuts per spec
         register_actions(self)
         self._wire_shortcuts()
+        # Wire overlays toggle to board
+        self.insights.overlays_changed.connect(self.board.apply_overlays)
 
     def _wire_shortcuts(self) -> None:
         # Map keys to actions as per spec where applicable (subset for now)
