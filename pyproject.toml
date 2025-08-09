@@ -12,4 +12,9 @@ dependencies = [
   "pygame>=2.5",
 ]
 
+[tool.setuptools]
+
+[tool.setuptools.packages.find]
+include = ["othello_coach*"]
+
 

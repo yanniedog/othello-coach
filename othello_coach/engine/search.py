@@ -132,6 +132,7 @@ class Searcher:
                 return 10_000
             return 0
         moves.sort(key=move_key, reverse=True)
+        orig_alpha = alpha
         for m in moves:
             child = pos.apply(m)
             s, _, line = self._negamax(child, depth-1, -beta, -alpha)
@@ -145,7 +146,7 @@ class Searcher:
             if alpha >= beta:
                 break
         flag = FLAG_EXACT
-        if best_score <= alpha:
+        if best_score <= orig_alpha:
             flag = FLAG_ALPHA
         elif best_score >= beta:
             flag = FLAG_BETA
