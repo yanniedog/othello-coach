@@ -59,3 +59,7 @@ def flip_mask_for_move(own: int, opp: int, sq: int) -> int:
         if run and (cur & own):
             flips |= run
     return flips
+
+
+# Export with expected name for tests
+generate_legal_mask = legal_moves_mask

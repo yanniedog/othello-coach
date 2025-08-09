@@ -165,3 +165,9 @@ class Searcher:
             flag = LOWER
         self.tt.save(board.hash, depth, best_score, flag, best_line[0] if best_line else -1)
         return best_score, best_line
+
+
+def search_position(board: Board, limits: SearchLimits) -> SearchResult:
+    """Main search function for external callers"""
+    searcher = Searcher()
+    return searcher.search(board, limits)
