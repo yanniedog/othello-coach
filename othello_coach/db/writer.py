@@ -5,8 +5,9 @@ import queue
 import sqlite3
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import os
+import pathlib
 import orjson
 
 from .schema_sql_loader import get_schema_sql
@@ -20,7 +21,16 @@ class WriterConfig:
 
 
 class DBWriter(mp.Process):
-    def __init__(self, db_path: str, in_queue: mp.Queue, stall_timeout_s: float = 30.0, checkpoint_interval_s: float = 600.0):
+    def __init__(
+        self,
+        db_path: str,
+        in_queue: mp.Queue,
+        stall_timeout_s: float = 30.0,
+        checkpoint_interval_s: float = 600.0,
+        busy_timeout_ms: int = 4000,
+        wal_checkpoint_mb: int = 100,
+        log_path: Optional[str] = None,
+    ):
         super().__init__(daemon=True)
         self.db_path = db_path
         self.in_queue = in_queue
@@ -30,6 +40,13 @@ class DBWriter(mp.Process):
         self.stall_timeout_s = stall_timeout_s
         self.checkpoint_interval_s = checkpoint_interval_s
         self.stats = {"received": 0, "applied": 0, "flushes": 0, "last_batch": 0}
+        self.busy_timeout_ms = busy_timeout_ms
+        self.wal_checkpoint_mb = wal_checkpoint_mb
+        if log_path is None:
+            default_lp = os.path.expanduser("~/.othello_coach/writer.log")
+            self.log_path = pathlib.Path(default_lp)
+        else:
+            self.log_path = pathlib.Path(log_path)
 
     def _log(self, event: str, **kwargs: Any) -> None:
         payload = {
@@ -40,13 +57,31 @@ class DBWriter(mp.Process):
         }
         payload.update(kwargs)
         try:
-            print(orjson.dumps(payload).decode("utf-8"), flush=True)
+            line = orjson.dumps(payload).decode("utf-8")
+            print(line, flush=True)
+            if self.log_path is not None:
+                self.log_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.log_path.open("a", encoding="utf-8") as f:
+                    f.write(line + "\n")
         except Exception:
             pass
 
+    def _should_checkpoint_by_size(self) -> bool:
+        wal_path = self.db_path + "-wal"
+        try:
+            size = os.path.getsize(wal_path)
+        except OSError:
+            return False
+        return size > self.wal_checkpoint_mb * 1024 * 1024
+
     def run(self) -> None:
         conn = sqlite3.connect(self.db_path)
-        conn.execute(f"PRAGMA busy_timeout={4000}")
+        # Apply PRAGMAs per spec on connection open
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA cache_size=-131072;")
+        conn.execute("PRAGMA mmap_size=268435456;")
+        conn.execute(f"PRAGMA busy_timeout={self.busy_timeout_ms}")
         conn.executescript(get_schema_sql())
         last_flush = time.monotonic()
         self._log("start", db_path=self.db_path)
@@ -64,18 +99,24 @@ class DBWriter(mp.Process):
                 pass
             now = time.monotonic()
             if self.batch and (now - last_flush > 0.25 or len(self.batch) >= 500):
+                t0 = time.perf_counter()
                 with conn:
                     for m in self.batch:
                         self._apply(conn, m)
+                t_ms = int((time.perf_counter() - t0) * 1000)
                 n = len(self.batch)
                 self.batch.clear()
                 last_flush = now
                 self.last_progress = now
                 self.stats["flushes"] += 1
                 self.stats["last_batch"] = n
-                self._log("flush", batch=n)
-            # Periodic WAL checkpoint every 10 minutes
-            if now - self.last_checkpoint > self.checkpoint_interval_s:
+                self.stats["last_flush_ms"] = t_ms
+                # EWMA for avg flush
+                prev = self.stats.get("avg_flush_ms", t_ms)
+                self.stats["avg_flush_ms"] = int(0.8 * prev + 0.2 * t_ms)
+                self._log("flush", batch=n, flush_ms=t_ms)
+            # Periodic WAL checkpoint every 10 minutes or if WAL size exceeds threshold
+            if (now - self.last_checkpoint > self.checkpoint_interval_s) or self._should_checkpoint_by_size():
                 try:
                     conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
                 except sqlite3.DatabaseError:

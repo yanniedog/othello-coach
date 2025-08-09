@@ -64,6 +64,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="othello-diag")
     parser.add_argument("--bundle", required=True)
+    parser.add_argument("--db-writer-log", default=str((CONFIG_HOME / "writer.log")))
     args = parser.parse_args()
 
     install_and_init()
@@ -73,6 +74,10 @@ def main() -> None:
         z.writestr("config.toml", CONFIG_PATH.read_text(encoding="utf-8"))
         if DB_PATH.exists():
             z.write(DB_PATH, arcname="coach.sqlite")
+        # include writer log if present
+        writer_log = pathlib.Path(args.db_writer_log)
+        if writer_log.exists():
+            z.write(writer_log, arcname="writer.log")
         z.writestr("env.txt", f"python={sys.version}\nplatform={sys.platform}\n")
         z.writestr("timestamp.txt", dt.datetime.utcnow().isoformat())
     console.print(f"[green]Diagnostics bundle written to {bundle_path}[/green]")
