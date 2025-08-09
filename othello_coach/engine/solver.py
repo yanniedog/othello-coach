@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from .board import Board, compute_hash
 from .movegen_fast import legal_moves_mask
 from .board import make_move
@@ -10,23 +12,25 @@ def terminal_disc_diff_cp(board: Board) -> int:
 
 
 def solve_exact(board: Board, max_empties: int = 12) -> int:
-    """Exact solver with Rust acceleration support"""
+    """Exact solver with optional Rust acceleration.
+
+    To prevent UI stalls in CPU vs CPU mode, Rust exact solving is disabled by default
+    unless environment variable `OTHELLO_COACH_RUST_EXACT=1` is set. Python fallback
+    remains deterministic and fast enough for ≤12 empties in GUI usage.
+    """
     empties = 64 - (board.B.bit_count() + board.W.bit_count())
     
-    # Check if we should use Rust acceleration
-    try:
-        import rust_kernel
-        
-        # Load configuration to check acceleration settings
-        accel_enabled = True  # Would load from config
-        rust_max_empties = 16 if accel_enabled else 12
-        
-        if empties <= rust_max_empties:
-            # Use Rust solver for better performance
-            score = rust_kernel.exact_solver(board.B, board.W, board.stm, empties, 64)
-            return score
-    except (ImportError, AttributeError):
-        pass
+    # Optional Rust acceleration (off by default to avoid stalls)
+    use_rust = os.environ.get("OTHELLO_COACH_RUST_EXACT", "0") == "1"
+    if use_rust:
+        try:
+            import rust_kernel
+            # Keep a conservative limit to bound runtime
+            rust_max_empties = 12
+            if empties <= rust_max_empties:
+                return rust_kernel.exact_solver(board.B, board.W, board.stm, empties, 64)
+        except (ImportError, AttributeError):
+            pass
     
     # Fall back to Python solver
     if empties > max_empties:
@@ -65,9 +69,9 @@ def _python_exact_solver(board: Board) -> int:
 def get_solver_threshold(config: dict = None) -> int:
     """Get current solver threshold based on configuration"""
     if config is None:
-        # Default configuration
-        accel_enabled = True
-        return 16 if accel_enabled else 12
+        # Conservative default: avoid calling exact solver too early to prevent UI stalls
+        # regardless of acceleration availability.
+        return 12
     
     accel_enabled = config.get('engine', {}).get('accel_enabled', True)
     
@@ -80,6 +84,6 @@ def get_solver_threshold(config: dict = None) -> int:
         accel_enabled = False
     
     if accel_enabled and rust_available:
-        return config.get('engine', {}).get('endgame_exact_empties', 16)
+        return config.get('engine', {}).get('endgame_exact_empties', 12)
     else:
         return 12  # Python solver limit

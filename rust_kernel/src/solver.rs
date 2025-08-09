@@ -1,6 +1,7 @@
 use crate::bitboards::*;
 use crate::movegen::*;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 /// Exact solver for endgame positions (≤16 empties)
 pub fn solve_exact(b: u64, w: u64, stm: u8, empties: u8, tt_mb: u32) -> i16 {
@@ -15,6 +16,8 @@ pub fn solve_exact(b: u64, w: u64, stm: u8, empties: u8, tt_mb: u32) -> i16 {
 struct ExactSolver {
     tt: HashMap<u64, TTEntry>,
     nodes: u64,
+    start_time: Instant,
+    max_duration: Duration,
 }
 
 #[derive(Clone, Copy)]
@@ -28,16 +31,30 @@ impl ExactSolver {
         Self {
             tt: HashMap::new(),
             nodes: 0,
+            start_time: Instant::now(),
+            max_duration: Duration::from_secs(30), // 30 second timeout
         }
     }
     
     fn solve(&mut self, b: u64, w: u64, stm: u8, empties: u8) -> i16 {
         self.nodes = 0;
+        self.start_time = Instant::now();
         self.negamax(b, w, stm, empties, -6400, 6400)
     }
     
     fn negamax(&mut self, b: u64, w: u64, stm: u8, empties: u8, mut alpha: i16, beta: i16) -> i16 {
         self.nodes += 1;
+        
+        // Check timeout periodically (every 10000 nodes)
+        if self.nodes % 10000 == 0 && self.start_time.elapsed() > self.max_duration {
+            // Return evaluation instead of exact score on timeout
+            return 0; // Neutral score fallback
+        }
+        
+        // Prevent runaway memory usage - limit TT size
+        if self.tt.len() > 50_000_000 {
+            self.tt.clear();
+        }
         
         // Terminal position
         if empties == 0 {
@@ -100,11 +117,13 @@ impl ExactSolver {
             }
         }
         
-        // Store in transposition table
-        self.tt.insert(hash, TTEntry {
-            score: best_score,
-            depth: empties,
-        });
+        // Store in transposition table only if we have reasonable memory usage
+        if self.tt.len() < 40_000_000 {
+            self.tt.insert(hash, TTEntry {
+                score: best_score,
+                depth: empties,
+            });
+        }
         
         best_score
     }

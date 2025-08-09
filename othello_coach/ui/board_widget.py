@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene
 from PyQt6.QtGui import QBrush, QColor, QPen
-from PyQt6.QtCore import QRectF, Qt, QPointF, QElapsedTimer, QTimer, pyqtSignal
+from PyQt6.QtCore import QRectF, Qt, QPointF, QElapsedTimer, QTimer, pyqtSignal, QSize
 
 from ..engine.board import start_board, legal_moves_mask, make_move, compute_hash, Board
 from ..engine.search import Searcher, SearchLimits, SearchResult
@@ -22,7 +22,9 @@ class BoardWidget(QGraphicsView):
     def __init__(self) -> None:
         super().__init__()
         self.setScene(QGraphicsScene(self))
-        self.setMinimumSize(300, 300)
+        self.setMinimumSize(320, 320)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.BoundingRectViewportUpdate)
+        self.setRenderHints(self.renderHints())
         self.board = start_board()
         self.game_over = False
         self.overlay_flags = {"mobility": False, "parity": False, "stability": False, "corner": False}
@@ -60,7 +62,10 @@ class BoardWidget(QGraphicsView):
         assert s is not None
         s.clear()
         size = 8
-        square = 40.0
+        # Compute square size based on current viewport while maintaining padding for UI clarity
+        vp = self.viewport().size()
+        side_px = float(min(vp.width(), vp.height()))
+        square = max(20.0, (side_px - 8.0) / size)
         board_px = square * size
         s.setSceneRect(QRectF(0, 0, board_px, board_px))
         dark_green = QColor(20, 110, 50)
@@ -170,6 +175,11 @@ class BoardWidget(QGraphicsView):
             # Uncomment for debugging: print(f"Warning: Overlay rendering failed: {e}")
             pass
 
+    def _current_square_size(self) -> float:
+        vp = self.viewport().size()
+        side_px = float(min(vp.width(), vp.height()))
+        return max(20.0, (side_px - 8.0) / 8.0)
+
     def _ensure_playable_state(self, schedule: bool = True) -> None:
         """Pass turn automatically if current side has no legal moves.
         If both sides have no legal moves, mark game over.
@@ -225,7 +235,7 @@ class BoardWidget(QGraphicsView):
             
         if event.button() == Qt.MouseButton.LeftButton:
             pos: QPointF = self.mapToScene(event.position().toPoint())  # type: ignore[attr-defined]
-            square = 40.0
+            square = self._current_square_size()
             c = int(pos.x() // square)
             r = int(pos.y() // square)
             if 0 <= r < 8 and 0 <= c < 8:
@@ -246,6 +256,16 @@ class BoardWidget(QGraphicsView):
                     self._emit_game_state()
                     return
         super().mousePressEvent(event)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        try:
+            self._draw()
+        finally:
+            super().resizeEvent(event)
+
+    def sizeHint(self) -> QSize:  # type: ignore[override]
+        # Prefer a square-ish initial footprint that scales
+        return QSize(640, 640)
 
     def apply_overlays(self, flags: dict) -> None:
         self.overlay_flags.update(flags)

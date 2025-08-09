@@ -2,7 +2,7 @@
 tt_mb = 128
 aspiration_cp = 50
 lmr = "normal"
-endgame_exact_empties = 12
+endgame_exact_empties = 14
 accel_enabled = true
 
 [strength]

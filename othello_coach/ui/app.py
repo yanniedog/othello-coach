@@ -47,11 +47,25 @@ def run_app() -> int:
     theme_name = ui_cfg.get("theme", "dark")
     try:
         theme = load_theme(theme_name)
-        # Basic stylesheet application; detailed WCAG checks happen in themes module if needed
+        # Modern, scalable stylesheet with accessible contrast and larger touch targets
+        bg = theme.get('background', '#1e1e1e')
+        fg = theme.get('foreground', '#f0f0f0')
+        accent = theme.get('accent', '#4ea3ff')
+        subtle = theme.get('subtle', '#2a2a2a')
         app.setStyleSheet(
             f"""
-            QWidget {{ background-color: {theme.get('background', '#1e1e1e')}; color: {theme.get('foreground', '#f0f0f0')}; }}
-            QGraphicsView {{ background-color: {theme.get('background', '#1e1e1e')}; }}
+            QWidget {{ background-color: {bg}; color: {fg}; font-size: 13px; }}
+            QToolBar {{ background: {subtle}; spacing: 8px; padding: 6px; border: 0; }}
+            QStatusBar {{ background: {subtle}; }}
+            QTabBar::tab {{ padding: 8px 14px; margin: 2px; }}
+            QTabWidget::pane {{ border: 1px solid {subtle}; }}
+            QPushButton {{ padding: 8px 14px; border-radius: 4px; background: {accent}; color: #0b0b0b; }}
+            QPushButton:disabled {{ background: #777; color: #333; }}
+            QGroupBox {{ border: 1px solid {subtle}; border-radius: 6px; margin-top: 10px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}
+            QGraphicsView {{ background-color: {bg}; }}
+            QSplitter::handle {{ background: {subtle}; width: 6px; }}
+            QLabel#TitleLabel {{ font-weight: 600; font-size: 16px; }}
             """
         )
     except Exception:

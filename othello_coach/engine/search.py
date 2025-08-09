@@ -69,7 +69,8 @@ class Searcher:
         return SearchResult(best_move, best_score, len(pv), self.nodes, elapsed_ms, pv)
 
     def _negamax(self, board: Board, depth: int, alpha: int, beta: int, start, limits: SearchLimits, ply: int) -> Tuple[int, List[int]]:
-        if self.nodes >= limits.node_cap or (time.perf_counter() - start) * 1000 > limits.time_ms:
+        now_ms = (time.perf_counter() - start) * 1000
+        if self.nodes >= limits.node_cap or now_ms > limits.time_ms:
             return evaluate(board), []
         empties = 64 - (board.B | board.W).bit_count()
         if empties <= limits.endgame_exact_empties:
@@ -83,13 +84,21 @@ class Searcher:
                 return -score, []
             best_score = -10_000
             best_sq = -1
+            # Only allow exact solving if we have comfortable time and node budget
+            time_left_ms = max(0, limits.time_ms - now_ms)
+            near_node_cap = self.nodes > max(0, limits.node_cap - 10_000)
+            allow_exact = (time_left_ms > max(50, int(0.3 * limits.time_ms))) and (not near_node_cap) and (empties <= 10)
             m = mask
             while m:
                 lsb = m & -m
                 sq = lsb.bit_length() - 1
                 m ^= lsb
                 b2, _ = make_move(board, sq)
-                score = -solve_exact(b2)
+                if allow_exact:
+                    score = -solve_exact(b2)
+                else:
+                    # Fall back to a fast evaluation to guarantee responsiveness
+                    score = -evaluate(b2)
                 if score > best_score:
                     best_score = score
                     best_sq = sq

@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QCoreApplication
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QSplitter,
+    QTabWidget,
+    QToolBar,
+    QLabel,
+)
 import os
 
 # In offscreen/headless CI environments, constructing real Qt widgets can fail even with
@@ -66,26 +76,35 @@ class MainWindow(BaseWindow):
         super().__init__()
         self.setWindowTitle("Othello Coach")
 
-        # Central layout: Board (left), right column with Game Controls + Insights + Tree
-        root = QWidget()
-        layout = QHBoxLayout(root)
-
+        # Central UI uses responsive splitters and tabs for scalability
+        # Left: scalable board; Right: tabs for Play/Insights/Tree/Training
         self.board = BoardWidget()
-        layout.addWidget(self.board, stretch=2)
+        self.board.setObjectName("BoardView")
 
-        right_col = QVBoxLayout()
         self.game_controls = GameControlsWidget()
         self.insights = InsightsDock()
         self.tree = TreeView()
         self.training = TrainingDock()
-        right_col.addWidget(self.game_controls, stretch=0)  # Fixed size
-        right_col.addWidget(self.insights, stretch=1)
-        right_col.addWidget(self.tree, stretch=1)
-        right_col.addWidget(self.training, stretch=1)
-        right_widget = QWidget()
-        right_widget.setLayout(right_col)
-        layout.addWidget(right_widget, stretch=1)
 
+        tabs = QTabWidget()
+        tabs.addTab(self.game_controls, "Play")
+        tabs.addTab(self.insights, "Insights")
+        tabs.addTab(self.tree, "Tree")
+        tabs.addTab(self.training, "Training")
+
+        # Outer splitter allows user to resize board vs. side panel
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.board)
+        splitter.addWidget(tabs)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        splitter.setChildrenCollapsible(False)
+
+        # Wrapper widget to host splitter as central
+        root = QWidget()
+        root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(6, 6, 6, 6)
+        root_layout.addWidget(splitter)
         self.setCentralWidget(root)
 
         # Actions and shortcuts per spec (must come before menu bar)
@@ -100,6 +119,10 @@ class MainWindow(BaseWindow):
         self.tree.set_main_window(self)
         # Wire game controls to board
         self._connect_game_controls()
+
+        # Modern toolbar and status bar
+        self._create_toolbar()
+        self._init_status_bar()
 
     def _create_menu_bar(self) -> None:
         """Create comprehensive menu bar with all available features."""
@@ -238,6 +261,12 @@ class MainWindow(BaseWindow):
         # Map keys to actions as per spec where applicable (subset for now)
         self.action_new.setShortcut("N")
         # Arrows/Space best move would be added when engine UI actions are implemented
+        # Additional accessible shortcuts
+        try:
+            self.action_toggle_overlays.setShortcut("O")
+            self.action_rebuild_tree.setShortcut("T")
+        except Exception:
+            pass
     
     def _connect_game_controls(self) -> None:
         """Connect game control signals to board widget"""
@@ -254,6 +283,53 @@ class MainWindow(BaseWindow):
         
         # Connect board state changes to game controls
         self.board.game_state_changed.connect(self.game_controls.update_game_state)
+        # Drive status bar updates
+        self.board.game_state_changed.connect(self._update_status_bar)
+
+    def _create_toolbar(self) -> None:
+        if _OFFSCREEN:
+            return
+        toolbar = QToolBar("Main Toolbar", self)
+        toolbar.setObjectName("MainToolbar")
+        toolbar.setMovable(False)
+        toolbar.addAction(self.action_new)
+        toolbar.addSeparator()
+        toolbar.addAction(self.action_rebuild_tree)
+        toolbar.addAction(self.action_toggle_overlays)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+
+    def _init_status_bar(self) -> None:
+        if _OFFSCREEN:
+            return
+        sb = self.statusBar()
+        self._status_turn = QLabel("")
+        self._status_score = QLabel("")
+        self._status_info = QLabel("")
+        for w in (self._status_turn, self._status_score, self._status_info):
+            sb.addPermanentWidget(w)
+        # Initialize once
+        self._update_status_bar({
+            "to_move": "Black",
+            "black_count": 2,
+            "white_count": 2,
+            "game_over": False,
+            "cpu_thinking": False,
+            "ply": 0,
+            "last_move_info": "",
+        })
+
+    def _update_status_bar(self, state: dict) -> None:
+        if _OFFSCREEN:
+            return
+        to_move = state.get("to_move", "?")
+        black = state.get("black_count", 0)
+        white = state.get("white_count", 0)
+        over = state.get("game_over", False)
+        thinking = state.get("cpu_thinking", False)
+        last = state.get("last_move_info", "")
+        self._status_turn.setText(f"Turn: {'-' if over else to_move}")
+        self._status_score.setText(f"Score B:{black} W:{white}")
+        self._status_info.setText(("CPU thinking" if thinking else "") + (f" — {last}" if last else ""))
 
     # Menu action handlers
     def _load_position(self) -> None:
