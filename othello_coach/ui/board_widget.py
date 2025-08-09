@@ -30,7 +30,7 @@ class BoardWidget(QGraphicsView):
             for c in range(size):
                 rect = QRectF(c * square, r * square, square, square)
                 color = dark_green if (r + c) % 2 == 0 else light_green
-                s.addRect(rect, QPen(Qt.NoPen), QBrush(color))
+                s.addRect(rect, QPen(Qt.PenStyle.NoPen), QBrush(color))
         # Draw discs
         B = self.board.B
         W = self.board.W
@@ -41,7 +41,7 @@ class BoardWidget(QGraphicsView):
             r, c = divmod(i, 8)
             rect = QRectF(c * square + 4, r * square + 4, square - 8, square - 8)
             color = QColor("black") if (B & bit) else QColor("white")
-            s.addEllipse(rect, QPen(Qt.black), QBrush(color))
+            s.addEllipse(rect, QPen(Qt.GlobalColor.black), QBrush(color))
         # Legal move pips for current player
         legal = legal_moves_mask(self.board)
         pen = QPen(QColor(255, 255, 0))
