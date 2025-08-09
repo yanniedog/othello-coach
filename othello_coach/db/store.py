@@ -73,11 +73,15 @@ def get_conn() -> sqlite3.Connection:
     return _conn
 
 
+def to_i64(x: int) -> int:
+    """Coerce Python int to signed 64-bit range for SQLite INTEGER storage."""
+    return ((int(x) + (1 << 63)) % (1 << 64)) - (1 << 63)
+
 def upsert_position(hashv:int, black:int, white:int, stm:int, ply:int=0):
     c = get_conn()
     c.execute(
         "INSERT OR REPLACE INTO positions(hash,black,white,stm,ply) VALUES(?,?,?,?,?)",
-        (hashv, black, white, stm, ply)
+        (to_i64(hashv), black, white, stm, ply)
     )
     c.commit()
 
@@ -86,7 +90,7 @@ def upsert_analysis(hashv:int, depth:int, score:int, flag:int, best_move:int, no
     c = get_conn()
     c.execute(
         "INSERT OR REPLACE INTO analyses(hash,depth,score,flag,best_move,nodes,time_ms) VALUES(?,?,?,?,?,?,?)",
-        (hashv, depth, score, flag, best_move, nodes, time_ms)
+        (to_i64(hashv), depth, score, flag, best_move, nodes, time_ms)
     )
     c.commit()
 
@@ -94,14 +98,16 @@ def upsert_analysis(hashv:int, depth:int, score:int, flag:int, best_move:int, no
 def record_move(from_hash:int, move:int, to_hash:int, score:Optional[float]=None, outcome:Optional[int]=None):
     c = get_conn()
     # Basic upsert/update of stats
-    row = c.execute("SELECT visit_count,wins,draws,losses,avg_score FROM moves WHERE from_hash=? AND move=?", (from_hash, move)).fetchone()
+    fh = to_i64(from_hash)
+    th = to_i64(to_hash)
+    row = c.execute("SELECT visit_count,wins,draws,losses,avg_score FROM moves WHERE from_hash=? AND move=?", (fh, move)).fetchone()
     if row is None:
         wins=draws=losses=0
         if outcome == 1: wins=1
         elif outcome == 0: draws=1
         elif outcome == -1: losses=1
         c.execute("INSERT INTO moves(from_hash,move,to_hash,visit_count,wins,draws,losses,avg_score) VALUES(?,?,?,?,?,?,?,?)",
-                  (from_hash, move, to_hash, 1, wins, draws, losses, score if score is not None else None))
+                  (fh, move, th, 1, wins, draws, losses, score if score is not None else None))
     else:
         vc, w, d, l, avg = row
         vc += 1
@@ -114,14 +120,14 @@ def record_move(from_hash:int, move:int, to_hash:int, score:Optional[float]=None
             else:
                 avg = (avg*(vc-1) + score)/vc
         c.execute("UPDATE moves SET visit_count=?,wins=?,draws=?,losses=?,avg_score=?,to_hash=? WHERE from_hash=? AND move=?",
-                  (vc, w, d, l, avg, to_hash, from_hash, move))
+                  (vc, w, d, l, avg, th, fh, move))
     c.commit()
 
 
 def record_game(start_hash:int, result:int, length:int, tags:dict, pgn:str) -> int:
     c = get_conn()
     c.execute("INSERT INTO games(start_hash,result,length,tags,pgn) VALUES(?,?,?, ?, ?)",
-              (start_hash, result, length, json.dumps(tags), pgn))
+              (to_i64(start_hash), result, length, json.dumps(tags), pgn))
     gid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     c.commit()
     return int(gid)
