@@ -83,6 +83,8 @@ class MainWindow(BaseWindow):
         self._wire_shortcuts()
         # Wire overlays toggle to board
         self.insights.overlays_changed.connect(self.board.apply_overlays)
+        # Wire tree view to main window for rebuild functionality
+        self.tree.set_main_window(self)
 
     def _wire_shortcuts(self) -> None:
         # Map keys to actions as per spec where applicable (subset for now)
