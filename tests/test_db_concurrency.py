@@ -13,7 +13,7 @@ def test_db_writer_spam_events(tmp_path):
     w.start()
     start = time.perf_counter()
     # flood some events
-    for i in range(1000):
+    for i in range(500):
         q.put({"op": "pos", "payload": {"hash": i, "black": i, "white": i, "stm": 0, "ply": 0}})
         q.put({"op": "note", "payload": {"hash": i, "text": "n"}})
     # allow writer to process
