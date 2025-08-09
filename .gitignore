@@ -6,3 +6,6 @@ othello_coach/engine/__pycache__/
 othello_coach/tools/__pycache__/
 othello_coach/db/__pycache__/
 othello_coach/ui/__pycache__/
+othello_coach/config/defaults.toml
+othello_coach/insights/__pycache__/
+tests/__pycache__/

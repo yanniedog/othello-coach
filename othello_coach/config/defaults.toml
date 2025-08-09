@@ -5,7 +5,7 @@ lmr = "normal"
 endgame_exact_empties = 12
 
 [strength]
-profile = "elo_1400"
+profile = "elo_1600"
 
 [ui]
 theme = "dark"
