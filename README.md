@@ -1,0 +1,2 @@
+# othello-coach
+Othello Coach
