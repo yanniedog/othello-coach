@@ -16,6 +16,7 @@ WEIGHTS = {
 
 
 def evaluate(board: Board) -> int:
+    """Legacy evaluation function"""
     feats = extract_features(board)
     empties = 64 - (board.B | board.W).bit_count()
     phase = empties / 64.0
@@ -29,3 +30,39 @@ def evaluate(board: Board) -> int:
     score += WEIGHTS["parity"] * feats["parity_pressure"]
     score += WEIGHTS["stability"] * (feats["stability_stm"] - feats["stability_opp"])
     return int(score)
+
+
+def evaluate_position(board: Board) -> int:
+    """Main evaluation function with acceleration support"""
+    # Try Rust acceleration first for key features
+    try:
+        import rust_kernel
+        
+        # Use Rust for expensive calculations when available
+        rust_mobility = rust_kernel.potential_mobility(board.B, board.W, board.stm)
+        rust_stability = rust_kernel.stability_proxy(board.B, board.W)
+        
+        # Supplement with Python features for full evaluation
+        feats = extract_features(board)
+        empties = 64 - (board.B | board.W).bit_count()
+        phase = empties / 64.0
+        
+        # Combine Rust and Python evaluations
+        score = 0
+        score += WEIGHTS["mobility"] * (feats["mobility_stm"] - feats["mobility_opp"])
+        score += WEIGHTS["potential_mobility"] * rust_mobility
+        score += WEIGHTS["corner_delta"] * (feats["corners_stm"] - feats["corners_opp"])
+        score += WEIGHTS["x_c_penalty"] * feats["x_c_risk"]
+        score += WEIGHTS["frontier"] * (feats["frontier_stm"] - feats["frontier_opp"])
+        score += int(WEIGHTS["disc_diff"] * (1 - phase) * (feats["disc_stm"] - feats["disc_opp"]))
+        score += WEIGHTS["parity"] * feats["parity_pressure"]
+        
+        # Use Rust stability calculation
+        stability_score = rust_stability if board.stm == 0 else -rust_stability
+        score += WEIGHTS["stability"] * stability_score
+        
+        return int(score)
+        
+    except ImportError:
+        # Fall back to pure Python evaluation
+        return evaluate(board)

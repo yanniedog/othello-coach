@@ -3,6 +3,7 @@ tt_mb = 128
 aspiration_cp = 50
 lmr = "normal"
 endgame_exact_empties = 12
+accel_enabled = true
 
 [strength]
 profile = "elo_1600"
@@ -21,4 +22,25 @@ per_position_cap = 500
 
 [feature_flags]
 webengine = true
-gdl_authoring = false
+gdl_authoring = true
+api = false
+postgres = false
+novelty_radar = true
+trainer = true
+gauntlet = true
+
+[api]
+bind = "127.0.0.1"
+port = 0
+token = ""
+rate_limit_rps = 10
+
+[postgres]
+dsn = ""
+analyses_partition_by_depth = true
+
+[trainer]
+daily_review_cap = 30
+new_to_review_ratio = "3:7"
+leitner_days = [1,3,7,14,30]
+auto_suspend_on_3_fails = true

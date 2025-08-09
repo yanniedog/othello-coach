@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "othello-coach"
-version = "1.0.0"
+version = "1.1.0"
 description = "Local Othello/Reversi coach: strong engine, insights, trees, and UI"
 readme = "README.md"
 # Broaden to support local Python 3.10 per tests and CI matrix
@@ -35,10 +35,14 @@ dependencies = [
   "Jinja2==3.1.*",
   "hypothesis==6.112.*",
   "tomli==2.0.*",
+  "fastapi==0.104.*",
+  "uvicorn==0.24.*",
+  "psycopg2-binary==2.9.*",
 ]
 
 [project.optional-dependencies]
 graphviz = ["pygraphviz==1.13.*"]
+rust = ["rust_kernel"]
 
 [project.urls]
 Homepage = "https://example.com/othello-coach"
@@ -60,6 +64,8 @@ othello-coach = "othello_coach.tools.cli:main"
 othello-perft = "othello_coach.tools.perft_cli:main"
 othello-tree = "othello_coach.tools.tree_cli:main"
 othello-diag = "othello_coach.tools.diag:main"
+othello-selfplay = "othello_coach.tools.selfplay_cli:main"
+othello-api = "othello_coach.tools.api_cli:main"
 
 [tool.ruff]
 line-length = 100

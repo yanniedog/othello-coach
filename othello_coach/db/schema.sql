@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS analyses(
   nodes INTEGER NOT NULL,
   time_ms INTEGER NOT NULL,
   engine_ver TEXT NOT NULL,
+  win_prob REAL DEFAULT NULL,
   PRIMARY KEY(hash, depth)
 );
 CREATE INDEX IF NOT EXISTS idx_analyses_dge8 ON analyses(depth) WHERE depth >= 8;
@@ -67,3 +68,36 @@ END;
 CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
   INSERT INTO notes_fts(notes_fts, rowid, text) VALUES('delete', old.hash, old.text);
 END;
+
+-- V1.1 Tables
+CREATE TABLE IF NOT EXISTS trainer(
+  hash INTEGER PRIMARY KEY,
+  box INTEGER NOT NULL DEFAULT 1,
+  due DATE,
+  streak INTEGER NOT NULL DEFAULT 0,
+  suspended INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ladders(
+  engine_ver TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  rating REAL NOT NULL,
+  RD REAL NOT NULL,
+  last_rated_at DATETIME NOT NULL,
+  PRIMARY KEY(engine_ver, profile)
+);
+
+CREATE TABLE IF NOT EXISTS mappings(
+  engine_ver TEXT PRIMARY KEY,
+  json TEXT NOT NULL,
+  created_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gdl_programs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  source TEXT NOT NULL,
+  ast_json TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
+);
