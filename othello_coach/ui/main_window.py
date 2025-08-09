@@ -39,6 +39,7 @@ from .board_widget import BoardWidget
 from .insights_dock import InsightsDock
 from .tree_view import TreeView
 from .training_dock import TrainingDock
+from .game_controls import GameControlsWidget
 from .actions import register_actions
 
 # Ensure a QApplication instance exists even when the module is imported in headless test contexts
@@ -65,7 +66,7 @@ class MainWindow(BaseWindow):
         super().__init__()
         self.setWindowTitle("Othello Coach")
 
-        # Central layout: Board (left), right column with Insights + Tree
+        # Central layout: Board (left), right column with Game Controls + Insights + Tree
         root = QWidget()
         layout = QHBoxLayout(root)
 
@@ -73,9 +74,11 @@ class MainWindow(BaseWindow):
         layout.addWidget(self.board, stretch=2)
 
         right_col = QVBoxLayout()
+        self.game_controls = GameControlsWidget()
         self.insights = InsightsDock()
         self.tree = TreeView()
         self.training = TrainingDock()
+        right_col.addWidget(self.game_controls, stretch=0)  # Fixed size
         right_col.addWidget(self.insights, stretch=1)
         right_col.addWidget(self.tree, stretch=1)
         right_col.addWidget(self.training, stretch=1)
@@ -95,6 +98,8 @@ class MainWindow(BaseWindow):
         self.insights.overlays_changed.connect(self.board.apply_overlays)
         # Wire tree view to main window for rebuild functionality
         self.tree.set_main_window(self)
+        # Wire game controls to board
+        self._connect_game_controls()
 
     def _create_menu_bar(self) -> None:
         """Create comprehensive menu bar with all available features."""
@@ -233,6 +238,22 @@ class MainWindow(BaseWindow):
         # Map keys to actions as per spec where applicable (subset for now)
         self.action_new.setShortcut("N")
         # Arrows/Space best move would be added when engine UI actions are implemented
+    
+    def _connect_game_controls(self) -> None:
+        """Connect game control signals to board widget"""
+        if _OFFSCREEN:
+            return  # Skip in offscreen mode
+        
+        # Connect game controls to board
+        self.game_controls.game_mode_changed.connect(self.board.set_game_mode)
+        self.game_controls.cpu_strength_changed.connect(
+            lambda black, white: self.board.set_cpu_strength(black, white)
+        )
+        self.game_controls.cpu_delay_changed.connect(self.board.set_cpu_move_delay)
+        self.game_controls.new_game_requested.connect(self.board.new_game)
+        
+        # Connect board state changes to game controls
+        self.board.game_state_changed.connect(self.game_controls.update_game_state)
 
     # Menu action handlers
     def _load_position(self) -> None:

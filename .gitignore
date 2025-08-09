@@ -3,4 +3,5 @@ diag.zip
 .venv312/
 venv/
 __pycache__/
-rust_kernel/
+rust_kernel/target/
+

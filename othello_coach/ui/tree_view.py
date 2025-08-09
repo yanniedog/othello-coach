@@ -51,8 +51,27 @@ class TreeView(QWidget):
         """Update the tree view with new tree data."""
         self._tree_data = tree_data
         if self._web_view:
-            # TODO: Send data to web view via JavaScript bridge
-            pass
+            # Render a proper graph using Cytoscape when WebEngine is available
+            try:
+                payload_js = json.dumps(self._tree_data)
+                js = (
+                    "(function(){"
+                    f"var parsed={payload_js};"
+                    "var nodes=[];var edges=[];"
+                    "for (var key in parsed.nodes){nodes.push({data:{id:String(key), score:parsed.nodes[key].score}});}"
+                    "parsed.edges.forEach(function(e){edges.push({data:{source:String(e.from), target:String(e.to), move:e.move, score:e.score}});});"
+                    "if (window.cy){cy.destroy();}"
+                    "var container=document.getElementById('app');"
+                    "window.cy = cytoscape({container:container, elements:nodes.concat(edges), style:["
+                    "{ selector:'node', style:{ 'label':'data(score)', 'background-color':'#4ea3ff', 'width':8, 'height':8 }},"
+                    "{ selector:'edge', style:{ 'width':1, 'line-color':'#999', 'target-arrow-color':'#999', 'curve-style':'bezier' }}],"
+                    "layout:{ name:'breadthfirst', directed:true, roots:String(parsed.root) }});"
+                    "})();"
+                )
+                self._web_view.page().runJavaScript(js)  # type: ignore[attr-defined]
+            except Exception:
+                # Fallback silently to text
+                self._refresh_tree_display()
         elif self._text_view:
             self._refresh_tree_display()
     
@@ -61,21 +80,36 @@ class TreeView(QWidget):
         if not self._text_view or not self._tree_data:
             return
             
-        text = "Game Tree:\n\n"
-        text += f"Root: {self._tree_data.get('root', 'unknown')}\n"
-        text += f"Nodes: {len(self._tree_data.get('nodes', {}))}\n"
-        text += f"Edges: {len(self._tree_data.get('edges', []))}\n\n"
-        
-        # Show top nodes by score
+        text = "Game Tree (hierarchical):\n\n"
         nodes = self._tree_data.get('nodes', {})
-        if nodes:
-            text += "Top nodes by score:\n"
-            sorted_nodes = sorted(nodes.items(), key=lambda x: x[1].get('score', 0), reverse=True)
-            for i, (hash_key, node) in enumerate(sorted_nodes[:10]):
-                score = node.get('score', 0)
-                stm = "Black" if node.get('stm') == 0 else "White"
-                hash_str = str(hash_key)[:8] if isinstance(hash_key, int) else str(hash_key)[:8]
-                text += f"{i+1}. Hash {hash_str}... Score: {score} (STM: {stm})\n"
+        edges = self._tree_data.get('edges', [])
+        root = self._tree_data.get('root')
+
+        # Build adjacency list to render as an actual tree (transpositions will repeat nodes)
+        children = {}
+        for e in edges:
+            children.setdefault(e['from'], []).append(e['to'])
+        
+        def render(node_id, indent, visited):
+            # Avoid infinite loops on transpositions; allow limited repeats
+            if visited.get(node_id, 0) > 1:
+                return
+            visited[node_id] = visited.get(node_id, 0) + 1
+            n = nodes.get(node_id, {})
+            score = n.get('score', 0)
+            text_lines.append("  " * indent + f"- {str(node_id)[:8]} (score {score})")
+            for ch in children.get(node_id, [])[:12]:
+                render(ch, indent + 1, visited)
+
+        text_lines = [f"Root: {root}", f"Nodes: {len(nodes)}", f"Edges: {len(edges)}", ""]
+        if root in nodes:
+            render(root, 0, {})
+        else:
+            # If root missing, just list top-level nodes
+            for nid in list(nodes.keys())[:20]:
+                text_lines.append(f"- {str(nid)[:8]} (score {nodes[nid].get('score', 0)})")
+
+        text = "\n".join(text_lines)
         
         self._text_view.setPlainText(text)
     

@@ -7,46 +7,100 @@ from .features import extract_features
 
 
 def mobility_heat(board: Board) -> Dict[int, int]:
+    """Return a move->score heatmap emphasizing net mobility gain.
+
+    Score = (our_mob - opp_mob) after move minus before.
+    This prioritizes moves that increase our options while reducing theirs.
+    """
     mask = legal_moves_mask(board)
-    moves = []
+    # Gather legal move indices
+    moves: List[int] = []
     m = mask
     while m:
         lsb = m & -m
         moves.append(lsb.bit_length() - 1)
         m ^= lsb
-    if len(moves) > 10:
-        moves = moves[:3]
-    heat = {}
+
+    # Baseline features to compute deltas
+    base = extract_features(board)
+    base_balance = base["mobility_stm"] - base["mobility_opp"]
+
+    # If there are too many moves, restrict to top-6 by resulting mobility differential
+    scored: List[Tuple[int, int]] = []
     for sq in moves:
         b2, _ = make_move(board, sq)
-        feats = extract_features(b2)
-        heat[sq] = feats["mobility_stm"]
+        f2 = extract_features(b2)
+        bal = f2["mobility_stm"] - f2["mobility_opp"]
+        scored.append((bal, sq))
+    if len(scored) > 6:
+        scored.sort(reverse=True)
+        moves = [sq for _, sq in scored[:6]]
+
+    heat: Dict[int, int] = {}
+    for sq in moves:
+        b2, _ = make_move(board, sq)
+        feats2 = extract_features(b2)
+        balance_after = feats2["mobility_stm"] - feats2["mobility_opp"]
+        heat[sq] = int(balance_after - base_balance)
     return heat
 
 
 def stability_heat(board: Board) -> Dict[int, int]:
+    """Return move->score heatmap for stability gain.
+
+    Uses Rust stability proxy when available; otherwise falls back to
+    feature-based stable disc proxy. Scores are deltas versus current.
+    """
     mask = legal_moves_mask(board)
     heat: Dict[int, int] = {}
+
+    # Baseline
+    base = extract_features(board)
+    base_stab_balance = base.get("stability_stm", 0) - base.get("stability_opp", 0)
+
+    use_rust = False
+    try:
+        import rust_kernel  # type: ignore
+        _ = rust_kernel.stability_proxy(board.B, board.W)
+        use_rust = True
+    except Exception:
+        use_rust = False
+
     m = mask
-    count = 0
-    while m and count < 10:
+    moves: List[int] = []
+    while m:
         lsb = m & -m
-        sq = lsb.bit_length() - 1
+        moves.append(lsb.bit_length() - 1)
         m ^= lsb
-        count += 1
+
+    # Limit to 10 (GUI clarity/perf)
+    moves = moves[:10]
+
+    for sq in moves:
         b2, _ = make_move(board, sq)
-        feats = extract_features(b2)
-        heat[sq] = feats["stability_stm"]
+        if use_rust:
+            try:
+                sscore = rust_kernel.stability_proxy(b2.B, b2.W)
+                # Interpret with side-to-move perspective
+                stab_balance_after = int(sscore if b2.stm == 0 else -sscore)
+            except Exception:
+                f2 = extract_features(b2)
+                stab_balance_after = f2.get("stability_stm", 0) - f2.get("stability_opp", 0)
+        else:
+            f2 = extract_features(b2)
+            stab_balance_after = f2.get("stability_stm", 0) - f2.get("stability_opp", 0)
+
+        heat[sq] = int(stab_balance_after - base_stab_balance)
     return heat
 
 
 def parity_map(board: Board) -> Dict[str, List[int]]:
-    """Compute a parity map of empty regions and highlight must-move borders.
+    """Compute a detailed parity map of empty regions.
 
-    Returns a dict with keys:
-    - odd: list of empty squares in odd regions
-    - even: list of empty squares in even regions
-    - must_move_border: list of empty squares on borders of large odd regions
+    Returns:
+      - odd: empty squares in odd regions
+      - even: empty squares in even regions
+      - must_move_border: border empties in large odd regions adjacent to opponent
     """
     empties_mask = ~(board.B | board.W) & 0xFFFFFFFFFFFFFFFF
     empties: List[int] = []

@@ -75,9 +75,11 @@ othello_coach/ui/__init__.py
 othello_coach/ui/actions.py
 othello_coach/ui/app.py
 othello_coach/ui/board_widget.py
+othello_coach/ui/game_controls.py
 othello_coach/ui/insights_dock.py
 othello_coach/ui/main_window.py
 othello_coach/ui/themes.py
+othello_coach/ui/training_dock.py
 othello_coach/ui/tree_view.py
 tests/test_board_hash_and_undo.py
 tests/test_db_concurrency.py

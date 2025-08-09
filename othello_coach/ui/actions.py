@@ -12,11 +12,7 @@ def register_actions(win: QMainWindow) -> None:
     def _new_game() -> None:
         try:
             if hasattr(win, "board"):
-                from ..engine.board import start_board
-                win.board.board = start_board()
-                win.board.game_over = False
-                win.board._ensure_playable_state()
-                win.board._draw()
+                win.board.new_game()
                 print("New game started")
         except Exception as e:
             print(f"New game failed: {e}")
