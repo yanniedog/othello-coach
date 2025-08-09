@@ -22,3 +22,15 @@ PROFILES = {
     "elo_2300": StrengthProfile(12, 2500, 0.0, 0.0, 1),
     "max": StrengthProfile(14, 4000, 0.0, 0.0, 1),
 }
+
+
+def get_strength_profile(name: str) -> StrengthProfile:
+    """Get strength profile by name"""
+    if name not in PROFILES:
+        raise ValueError(f"Unknown strength profile: {name}")
+    return PROFILES[name]
+
+
+def list_strength_profiles() -> list[str]:
+    """List all available strength profile names"""
+    return list(PROFILES.keys())

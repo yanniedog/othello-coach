@@ -38,7 +38,7 @@ def evaluate_position(board: Board) -> int:
     try:
         import rust_kernel
         
-        # Use Rust for expensive calculations when available
+        # Test if Rust functions are actually available
         rust_mobility = rust_kernel.potential_mobility(board.B, board.W, board.stm)
         rust_stability = rust_kernel.stability_proxy(board.B, board.W)
         
@@ -63,6 +63,6 @@ def evaluate_position(board: Board) -> int:
         
         return int(score)
         
-    except ImportError:
-        # Fall back to pure Python evaluation
+    except (ImportError, AttributeError):
+        # Fall back to pure Python evaluation when Rust is not available or incomplete
         return evaluate(board)

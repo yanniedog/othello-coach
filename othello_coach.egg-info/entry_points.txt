@@ -1,5 +1,8 @@
 [console_scripts]
+othello-api = othello_coach.tools.api_cli:main_sync
 othello-coach = othello_coach.tools.cli:main
 othello-diag = othello_coach.tools.diag:main
 othello-perft = othello_coach.tools.perft_cli:main
+othello-selfplay = othello_coach.tools.selfplay_cli:main
 othello-tree = othello_coach.tools.tree_cli:main
+othello_coach = othello_coach.tools.cli:main

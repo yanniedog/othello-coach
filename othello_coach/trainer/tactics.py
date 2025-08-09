@@ -97,7 +97,8 @@ class TacticsGenerator:
     def _make_move(self, board: Board, move: int) -> Board:
         """Make a move and return new board"""
         from ..engine.board import make_move
-        return make_move(board, move)
+        new_board, _ = make_move(board, move)
+        return new_board
     
     def _analyze_position_for_hint(self, board: Board, best_move: int) -> Tuple[str, str]:
         """Analyze position to determine appropriate hint"""

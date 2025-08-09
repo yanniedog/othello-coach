@@ -167,7 +167,7 @@ class EndgameDrills:
                 best_move = self._find_best_move(board, score)
                 return score / 100.0, best_move  # Convert from centipawns
                 
-            except ImportError:
+            except (ImportError, AttributeError):
                 # Fallback to Python solver
                 result = solve_exact(board, empties)
                 if result:
@@ -206,7 +206,8 @@ class EndgameDrills:
     def _make_move(self, board: Board, move: int) -> Board:
         """Make a move and return new board"""
         from ..engine.board import make_move
-        return make_move(board, move)
+        new_board, _ = make_move(board, move)
+        return new_board
     
     def _is_critical_position(self, board: Board, best_move: int, best_score: float) -> bool:
         """Check if this is a position where precision matters"""

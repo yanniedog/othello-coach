@@ -185,7 +185,7 @@ class TestGDLValidation:
         from othello_coach.gdl.validator import validate_gdl_program
         
         # Create invalid program manually (parser would catch syntax errors)
-        goal = CustomGoal(weights={'invalid_feature': 1.0})
+        goal = CustomGoal(goal_type='custom', weights={'invalid_feature': 1.0})
         program = GDLProgram(gdl_v=1, goal=goal)
         
         errors = validate_gdl_program(program)
@@ -197,7 +197,7 @@ class TestGDLValidation:
         from othello_coach.gdl.validator import validate_gdl_program
         
         # Invalid depth
-        goal = ScoreGoal(side='white')
+        goal = ScoreGoal(goal_type='score', side='white')
         params = GDLParams(max_depth=0)  # Invalid
         program = GDLProgram(gdl_v=1, goal=goal, params=params)
         

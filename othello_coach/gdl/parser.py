@@ -148,12 +148,12 @@ class GDLParser:
             return self._parse_score_goal()
         elif token[0] == 'MIN_OPP_MOB':
             self._consume('MIN_OPP_MOB')
-            return MinOppMobGoal()
+            return MinOppMobGoal(goal_type='min_opp_mob')
         elif token[0] == 'EARLIEST_CORNER':
             return self._parse_earliest_corner_goal()
         elif token[0] == 'MAX_STABILITY':
             self._consume('MAX_STABILITY')
-            return MaxStabilityGoal()
+            return MaxStabilityGoal(goal_type='max_stability')
         elif token[0] == 'CUSTOM':
             return self._parse_custom_goal()
         else:
@@ -174,7 +174,7 @@ class GDLParser:
             )
         
         self._consume('RPAREN')
-        return ScoreGoal(side=side_token[1].lower())
+        return ScoreGoal(goal_type='score', side=side_token[1].lower())
     
     def _parse_earliest_corner_goal(self) -> EarliestCornerGoal:
         """Parse earliest corner goal"""
@@ -192,7 +192,7 @@ class GDLParser:
             )
         
         self._consume('RPAREN')
-        return EarliestCornerGoal(max_plies=max_plies)
+        return EarliestCornerGoal(goal_type='earliest_corner', max_plies=max_plies)
     
     def _parse_custom_goal(self) -> CustomGoal:
         """Parse custom weighted goal"""
@@ -229,8 +229,8 @@ class GDLParser:
         
         if not weights:
             raise GDLParseError("Custom goal must have at least one weight")
-        
-        return CustomGoal(weights=weights)
+
+        return CustomGoal(goal_type='custom', weights=weights)
     
     def _parse_params(self) -> Optional[GDLParams]:
         """Parse optional parameters"""
@@ -278,7 +278,13 @@ class GDLParser:
                 self._consume('WEIGHT')
                 self._consume('LPAREN')
                 
-                name_token = self._consume('IDENTIFIER')
+                # Accept both IDENTIFIER and feature keywords in weight context
+                name_token = self._consume()
+                if name_token[0] not in ('IDENTIFIER', 'PARITY', 'MOBILITY', 'STABILITY', 'FRONTIER', 'CORNERS'):
+                    raise GDLParseError(
+                        f"Expected weight name, got {name_token[0]}", 
+                        name_token[2], name_token[3]
+                    )
                 self._consume('EQUALS')
                 value_token = self._consume('NUMBER')
                 

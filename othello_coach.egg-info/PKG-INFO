@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: othello-coach
-Version: 1.0.0
+Version: 1.1.0
 Summary: Local Othello/Reversi coach: strong engine, insights, trees, and UI
 Author-email: Othello Coach <noreply@example.com>
 License: MIT License
@@ -48,8 +48,19 @@ Requires-Dist: msgspec==0.18.*
 Requires-Dist: Jinja2==3.1.*
 Requires-Dist: hypothesis==6.112.*
 Requires-Dist: tomli==2.0.*
+Requires-Dist: fastapi==0.104.*
+Requires-Dist: uvicorn==0.24.*
+Requires-Dist: psycopg2-binary==2.9.*
 Provides-Extra: graphviz
 Requires-Dist: pygraphviz==1.13.*; extra == "graphviz"
+Provides-Extra: rust
+Requires-Dist: rust_kernel; extra == "rust"
+Provides-Extra: dev
+Requires-Dist: pytest==8.3.*; extra == "dev"
+Requires-Dist: pytest-xdist==3.6.*; extra == "dev"
+Requires-Dist: pytest-cov==5.0.*; extra == "dev"
+Requires-Dist: ruff==0.6.*; extra == "dev"
+Requires-Dist: mypy==1.11.*; extra == "dev"
 Dynamic: license-file
 
 # Othello Coach

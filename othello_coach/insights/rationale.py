@@ -37,3 +37,13 @@ def explain_move(board: Board, move: int) -> List[str]:
         candidates.append((abs(d["dS"]) * WEIGHTS["stability"], TEMPLATES[3][1]({"dS": d["dS"]})))
     candidates.sort(key=lambda t: t[0], reverse=True)
     return [msg for _, msg in candidates[:2]]
+
+
+def generate_rationale(board: Board, move: int) -> Dict[str, List[str]]:
+    """Generate rationale for a move (API compatible version)"""
+    explanations = explain_move(board, move)
+    return {
+        "explanations": explanations,
+        "move": move,
+        "position": f"{board.B:016x}_{board.W:016x}_{board.stm}"
+    }

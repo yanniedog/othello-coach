@@ -35,10 +35,8 @@ class GDLGoal:
 @dataclass
 class ScoreGoal(GDLGoal):
     """Maximize eval for a specific side"""
+    goal_type: str
     side: str  # 'white', 'black', 'stm'
-    
-    def __post_init__(self):
-        self.goal_type = 'score'
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -48,31 +46,27 @@ class ScoreGoal(GDLGoal):
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ScoreGoal':
-        return cls(side=data['side'])
+        return cls(goal_type='score', side=data['side'])
 
 
 @dataclass
 class MinOppMobGoal(GDLGoal):
     """Minimize opponent's next-move count"""
-    
-    def __post_init__(self):
-        self.goal_type = 'min_opp_mob'
+    goal_type: str = 'min_opp_mob'
     
     def to_dict(self) -> Dict[str, Any]:
         return {'type': 'min_opp_mob'}
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MinOppMobGoal':
-        return cls()
+        return cls(goal_type='min_opp_mob')
 
 
 @dataclass
 class EarliestCornerGoal(GDLGoal):
     """Reward early corner capture"""
+    goal_type: str
     max_plies: int
-    
-    def __post_init__(self):
-        self.goal_type = 'earliest_corner'
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -82,31 +76,27 @@ class EarliestCornerGoal(GDLGoal):
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'EarliestCornerGoal':
-        return cls(max_plies=data['max_plies'])
+        return cls(goal_type='earliest_corner', max_plies=data['max_plies'])
 
 
 @dataclass
 class MaxStabilityGoal(GDLGoal):
     """Maximize stability"""
-    
-    def __post_init__(self):
-        self.goal_type = 'max_stability'
+    goal_type: str = 'max_stability'
     
     def to_dict(self) -> Dict[str, Any]:
         return {'type': 'max_stability'}
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'MaxStabilityGoal':
-        return cls()
+        return cls(goal_type='max_stability')
 
 
 @dataclass
 class CustomGoal(GDLGoal):
     """Custom weighted feature combination"""
+    goal_type: str
     weights: Dict[str, float]
-    
-    def __post_init__(self):
-        self.goal_type = 'custom'
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -116,7 +106,7 @@ class CustomGoal(GDLGoal):
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CustomGoal':
-        return cls(weights=data['weights'])
+        return cls(goal_type='custom', weights=data['weights'])
 
 
 @dataclass

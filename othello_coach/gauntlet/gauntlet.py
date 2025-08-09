@@ -46,6 +46,10 @@ class GauntletRunner:
         engine = create_engine(f"sqlite:///{self.db_path}")
         Session = sessionmaker(bind=engine)
         
+        # Ensure schema exists for in-memory databases (used in tests)
+        if self.db_path == ":memory:":
+            self._ensure_schema(engine)
+        
         ladder = {}
         with Session() as session:
             query = text("""
@@ -70,6 +74,16 @@ class GauntletRunner:
                 ladder[profile] = self.glicko.create_initial_rating()
         
         return ladder
+    
+    def _ensure_schema(self, engine):
+        """Ensure database schema exists (for tests)"""
+        from ..db.schema_sql_loader import get_schema_sql
+        # Use raw connection to execute multiple statements
+        raw_conn = engine.raw_connection()
+        try:
+            raw_conn.executescript(get_schema_sql())
+        finally:
+            raw_conn.close()
     
     def run_round_robin(self, profiles: List[str], games_per_pair: int = 1000, 
                        workers: int = 4, root_noise: bool = True) -> List[GauntletMatch]:

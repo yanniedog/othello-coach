@@ -40,10 +40,11 @@ class TestLeitnerScheduler:
         """Test position classification for training types"""
         scheduler = LeitnerScheduler(":memory:")
         
-        # Endgame position (few pieces)
+        # Endgame position (≤16 empties, so ≥48 pieces)
+        # Let's use specific positions for black and white that don't overlap
         item_type = scheduler._classify_position(
-            black=0x0000000000001000,  # Few pieces
-            white=0x0000000000002000,
+            black=0xFFFFFFFFFFFF0000,  # 48 bits set (rows 1-6)
+            white=0x000000000000FF00,  # 8 bits set (row 7), total 56 pieces, 8 empties
             stm=0,
             ply=50
         )
@@ -63,9 +64,10 @@ class TestLeitnerScheduler:
         scheduler = LeitnerScheduler(":memory:")
         
         # Create schema first
+        from sqlalchemy import text
         with scheduler.Session() as session:
-            session.execute("CREATE TABLE trainer(hash INTEGER PRIMARY KEY, box INTEGER, due DATE, streak INTEGER, suspended INTEGER)")
-            session.execute("CREATE TABLE positions(hash INTEGER PRIMARY KEY, black INTEGER, white INTEGER, stm INTEGER, ply INTEGER)")
+            session.execute(text("CREATE TABLE trainer(hash INTEGER PRIMARY KEY, box INTEGER, due DATE, streak INTEGER, suspended INTEGER)"))
+            session.execute(text("CREATE TABLE positions(hash INTEGER PRIMARY KEY, black INTEGER, white INTEGER, stm INTEGER, ply INTEGER)"))
             session.commit()
         
         queue = scheduler.get_daily_queue(max_items=5)

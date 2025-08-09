@@ -1,11 +1,61 @@
 use crate::bitboards::*;
 
-/// Calculate stability proxy using flood fill from corners and edges
+/// Calculate stability proxy using same algorithm as Python
 pub fn calculate_stability_proxy(b: u64, w: u64) -> i16 {
-    let black_stable = flood_stability(b, b | w);
-    let white_stable = flood_stability(w, b | w);
+    let black_stable = stable_count(b, w);
+    let white_stable = stable_count(w, b);
     
-    popcount(black_stable) as i16 - popcount(white_stable) as i16
+    black_stable as i16 - white_stable as i16
+}
+
+/// Stable count matching Python algorithm exactly  
+fn stable_count(mask_color: u64, mask_other: u64) -> u32 {
+    let mut stable = 0u32;
+    let corners = [0, 7, 56, 63]; // A1, H1, A8, H8
+    
+    for &corner in &corners {
+        if (mask_color & (1u64 << corner)) == 0 {
+            continue; // No piece at this corner
+        }
+        
+        // Extend along two edges from the corner
+        let directions = match corner {
+            0 => [1, 8],      // A1: East, North
+            7 => [-1, 8],     // H1: West, North  
+            56 => [1, -8],    // A8: East, South
+            63 => [-1, -8],   // H8: West, South
+            _ => [0, 0],      // Should never happen
+        };
+        
+        for &d in &directions {
+            if d == 0 { continue; }
+            
+            let mut cur = corner as i8;
+            loop {
+                let nr = cur + d;
+                if nr < 0 || nr >= 64 {
+                    break;
+                }
+                
+                // Stop at edge crossings  
+                if d == 1 && (nr % 8 == 0) {
+                    break;
+                }
+                if d == -1 && (nr % 8 == 7) {
+                    break;
+                }
+                
+                if (mask_color & (1u64 << nr)) == 0 {
+                    break; // No piece here
+                }
+                
+                stable += 1;
+                cur = nr;
+            }
+        }
+    }
+    
+    stable
 }
 
 /// Flood fill stability calculation from corners and safe edges

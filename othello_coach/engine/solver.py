@@ -25,7 +25,7 @@ def solve_exact(board: Board, max_empties: int = 12) -> int:
             # Use Rust solver for better performance
             score = rust_kernel.exact_solver(board.B, board.W, board.stm, empties, 64)
             return score
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
     
     # Fall back to Python solver

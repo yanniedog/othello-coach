@@ -60,3 +60,4 @@ def flip_mask_for_move(own: int, opp: int, sq: int) -> int:
 
 # Export with expected name for tests
 generate_legal_mask = legal_moves_mask
+generate_flip_mask = flip_mask_for_move

@@ -1,27 +1,58 @@
 use crate::bitboards::*;
 
-/// Generate legal move mask using precomputed ray approach
+/// Generate legal move mask using simple ray casting
 pub fn generate_legal_mask(b: u64, w: u64, stm: u8) -> u64 {
     let (own, opp) = if stm == 0 { (b, w) } else { (w, b) };
     let empty = !(b | w);
     let mut legal = 0u64;
     
-    // For each direction
-    for &dir in &DIRECTIONS {
-        let mut captures = 0u64;
-        let mut x = opp;
-        let shifted = shift_dir(own, dir);
-        let mut t = x & shifted;
-        
-        while t != 0 {
-            captures |= t;
-            t = x & shift_dir(t, dir);
+    // Check each empty square
+    for sq in 0..64 {
+        let sq_bit = 1u64 << sq;
+        if empty & sq_bit == 0 {
+            continue; // Not empty
         }
         
-        legal |= shift_dir(captures, -dir) & empty;
+        // Check if this square has valid moves in any direction
+        for &dir in &DIRECTIONS {
+            if has_captures_in_direction(own, opp, sq, dir) {
+                legal |= sq_bit;
+                break;
+            }
+        }
     }
     
     legal
+}
+
+/// Check if a move at square sq captures pieces in given direction
+fn has_captures_in_direction(own: u64, opp: u64, sq: u8, dir: i8) -> bool {
+    let mut pos = sq as i8 + dir;
+    let mut captured_count = 0;
+    
+    // Walk in direction until we hit edge, empty square, or own piece
+    while pos >= 0 && pos < 64 {
+        // Check for edge wrap-around
+        match dir {
+            1 | 9 | -7 => if pos % 8 == 0 && sq % 8 == 7 { return false; }, // East-bound wrap
+            -1 | -9 | 7 => if pos % 8 == 7 && sq % 8 == 0 { return false; }, // West-bound wrap
+            _ => {}
+        }
+        
+        let pos_bit = 1u64 << pos;
+        
+        if opp & pos_bit != 0 {
+            captured_count += 1;
+        } else if own & pos_bit != 0 {
+            return captured_count > 0; // Valid if we captured at least one opponent piece
+        } else {
+            return false; // Hit empty square
+        }
+        
+        pos += dir;
+    }
+    
+    false // Hit edge without finding own piece
 }
 
 /// Generate flip mask for a specific move
