@@ -53,9 +53,9 @@ fn exact_solver(b: u64, w: u64, stm: u8, empties: u8, tt_mb: u32) -> PyResult<i1
     Ok(solve_exact(b, w, stm, empties, tt_mb))
 }
 
-/// Python module definition
+/// Python extension module: installs as `rust_kernel._rust_kernel`
 #[pymodule]
-fn rust_kernel(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _rust_kernel(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(legal_mask, m)?)?;
     m.add_function(wrap_pyfunction!(flip_mask, m)?)?;
     m.add_function(wrap_pyfunction!(potential_mobility, m)?)?;
