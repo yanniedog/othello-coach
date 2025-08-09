@@ -57,6 +57,11 @@ othello_coach/ui/main_window.py
 othello_coach/ui/themes.py
 othello_coach/ui/tree_view.py
 tests/test_board_hash_and_undo.py
+tests/test_db_concurrency.py
+tests/test_eval_features.py
+tests/test_insights_and_rationales.py
 tests/test_movegen_crosscheck.py
 tests/test_perft.py
+tests/test_search_core.py
+tests/test_solver_exact.py
 tests/test_ui_smoke.py
