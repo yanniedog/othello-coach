@@ -41,6 +41,14 @@ class BoardWidget(QGraphicsView):
         self.cpu_timer = QTimer()
         self.cpu_timer.setSingleShot(True)
         self.cpu_timer.timeout.connect(self._make_cpu_move)
+        self.cpu_busy = False
+        # Watchdog to recover from any missed timers or stalls
+        self.cpu_watchdog = QTimer()
+        self.cpu_watchdog.setInterval(750)
+        self.cpu_watchdog.timeout.connect(self._cpu_watchdog_tick)
+        self.cpu_watchdog.start()
+        self._stall_ticks = 0
+        self._last_ply_seen = self.board.ply
         
         self._ensure_playable_state()
         self._draw()
@@ -161,7 +169,7 @@ class BoardWidget(QGraphicsView):
             # Uncomment for debugging: print(f"Warning: Overlay rendering failed: {e}")
             pass
 
-    def _ensure_playable_state(self) -> None:
+    def _ensure_playable_state(self, schedule: bool = True) -> None:
         """Pass turn automatically if current side has no legal moves.
         If both sides have no legal moves, mark game over.
         """
@@ -169,7 +177,8 @@ class BoardWidget(QGraphicsView):
         for _ in range(2):
             if legal_moves_mask(self.board) != 0:
                 # Current player has legal moves
-                self._schedule_cpu_move_if_needed()
+                if schedule:
+                    self._schedule_cpu_move_if_needed()
                 return
             
             # No legal moves for current side → try passing
@@ -199,11 +208,13 @@ class BoardWidget(QGraphicsView):
             # (who now has legal moves) needs to move automatically (CPU)
         
         # If we exit the loop, check one more time for CPU moves
-        self._schedule_cpu_move_if_needed()
+        if schedule:
+            self._schedule_cpu_move_if_needed()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         # If current side has no moves, auto-pass first
-        self._ensure_playable_state()
+        # Do not schedule within the CPU move; we will schedule in finally
+        self._ensure_playable_state(schedule=False)
         if self.game_over:
             return
         
@@ -256,7 +267,7 @@ class BoardWidget(QGraphicsView):
     
     def set_cpu_move_delay(self, delay_ms: int) -> None:
         """Set delay for CPU moves to make them feel more natural"""
-        self.cpu_move_delay_ms = max(100, min(5000, delay_ms))
+        self.cpu_move_delay_ms = max(0, min(5000, delay_ms))
     
     def _is_human_turn(self) -> bool:
         """Check if it's a human player's turn"""
@@ -284,21 +295,54 @@ class BoardWidget(QGraphicsView):
     
     def _schedule_cpu_move_if_needed(self) -> None:
         """Schedule a CPU move if it's CPU's turn"""
-        if self._is_cpu_turn() and not self.cpu_timer.isActive():
+        if not self._is_cpu_turn() or self.game_over or self.cpu_busy:
+            return
+        # Immediate scheduling if delay is zero
+        if self.cpu_move_delay_ms <= 0:
+            QTimer.singleShot(0, self._make_cpu_move)
+            return
+        if not self.cpu_timer.isActive():
             self.cpu_timer.start(self.cpu_move_delay_ms)
+
+    def _cpu_watchdog_tick(self) -> None:
+        """Watchdog to ensure CPU keeps moving when it should."""
+        try:
+            if self.game_over:
+                self._stall_ticks = 0
+                return
+            # Progress tracking
+            if self.board.ply != self._last_ply_seen:
+                self._stall_ticks = 0
+                self._last_ply_seen = self.board.ply
+            # If CPU should move but nothing is scheduled, try to kick it
+            if self._is_cpu_turn() and not self.cpu_busy and not self.cpu_timer.isActive():
+                self._stall_ticks += 1
+                if self.cpu_move_delay_ms <= 0:
+                    QTimer.singleShot(0, self._make_cpu_move)
+                else:
+                    self.cpu_timer.start(self.cpu_move_delay_ms)
+                # If repeatedly stalled, force a fallback move to guarantee progress
+                if self._stall_ticks >= 3:
+                    if legal_moves_mask(self.board) != 0:
+                        self._play_fallback_move()
+                        self._stall_ticks = 0
+        except Exception:
+            # Never let watchdog crash the UI
+            pass
     
     def _make_cpu_move(self) -> None:
         """Make a CPU move using the search engine"""
         if self.game_over or not self._is_cpu_turn():
             return
-        
+
         # First check if we need to handle passes before attempting to search
-        self._ensure_playable_state()
-        
+        self._ensure_playable_state(schedule=False)
+
         # After ensuring playable state, check again if it's still CPU's turn
         if self.game_over or not self._is_cpu_turn():
             return
-        
+
+        self.cpu_busy = True
         try:
             # Get strength profile for current player
             strength_name = self.cpu_black_strength if self.board.stm == 0 else self.cpu_white_strength
@@ -312,6 +356,11 @@ class BoardWidget(QGraphicsView):
                 endgame_exact_empties=12
             )
             
+            # Reset per-search counters to avoid hitting node cap across moves
+            try:
+                self.searcher.nodes = 0
+            except Exception:
+                pass
             # Search for best move
             result = self.searcher.search(self.board, limits)
             
@@ -330,17 +379,28 @@ class BoardWidget(QGraphicsView):
                 self.last_move_info = f"{player_name} played (CPU)"
                 
                 # Update game state after move
-                self._ensure_playable_state()
+                self._ensure_playable_state(schedule=False)
                 self._draw()
                 self._emit_game_state()
             else:
-                # This should rarely happen since _ensure_playable_state should handle passes
-                log_event("game.error", "cpu_no_moves", stm=self.board.stm)
-                print(f"CPU search returned no moves - this shouldn't happen after _ensure_playable_state")
+                # Failsafe: if search produced no move, pick a legal move if any
+                if legal_moves_mask(self.board) != 0:
+                    self._play_fallback_move()
+                else:
+                    # No legal moves indeed; emit and reschedule after pass handling
+                    log_event("game.error", "cpu_no_moves", stm=self.board.stm)
+                    # Attempt to reschedule to avoid stalling
+                    self._schedule_cpu_move_if_needed()
         
         except Exception as e:
             log_event("game.error", "cpu_move_failed", error=str(e))
             print(f"CPU move failed: {e}")
+            # Attempt to recover by rescheduling
+            self._schedule_cpu_move_if_needed()
+        finally:
+            self.cpu_busy = False
+            # After finishing, ensure next move is queued if still CPU turn
+            self._schedule_cpu_move_if_needed()
     
     def _apply_strength_effects(self, best_move: int, profile) -> int:
         """Apply strength-based effects like blunders and randomness"""
@@ -391,7 +451,7 @@ class BoardWidget(QGraphicsView):
             "ply": self.board.ply,
             "game_over": self.game_over,
             "game_mode": self.game_mode,
-            "cpu_thinking": self.cpu_timer.isActive(),
+            "cpu_thinking": self.cpu_busy or self.cpu_timer.isActive(),
             "is_human_turn": self._is_human_turn(),
             "last_move_info": self.last_move_info,
             "winner": None
@@ -406,6 +466,20 @@ class BoardWidget(QGraphicsView):
                 state["winner"] = "Draw"
         
         self.game_state_changed.emit(state)
+
+    def _play_fallback_move(self) -> None:
+        """Play a deterministic legal move as a last-resort failsafe."""
+        legal = legal_moves_mask(self.board)
+        if legal == 0:
+            return
+        lsb = legal & -legal
+        fallback_move = lsb.bit_length() - 1
+        self.board, _ = make_move(self.board, fallback_move)
+        self.last_move_sq = fallback_move
+        log_event("game.move", "cpu_fallback", square=fallback_move, stm=1-self.board.stm)
+        self._ensure_playable_state()
+        self._draw()
+        self._emit_game_state()
     
     def new_game(self) -> None:
         """Start a new game"""

@@ -69,7 +69,8 @@ class GameControlsWidget(QWidget):
         delay_layout = QHBoxLayout()
         delay_layout.addWidget(QLabel("CPU delay:"))
         self.delay_spin = QSpinBox()
-        self.delay_spin.setRange(100, 5000)
+        self.delay_spin.setRange(0, 5000)
+        self.delay_spin.setSingleStep(100)
         self.delay_spin.setValue(1000)
         self.delay_spin.setSuffix(" ms")
         delay_layout.addWidget(self.delay_spin)
@@ -136,6 +137,7 @@ class GameControlsWidget(QWidget):
     
     def update_game_state(self, state: dict) -> None:
         """Update the display based on game state"""
+        move_no = state.get("ply", 0) + 1  # Upcoming move number for the side to move
         # Update status
         if state.get("game_over", False):
             winner = state.get("winner", "Draw")
@@ -147,10 +149,10 @@ class GameControlsWidget(QWidget):
         else:
             to_move = state.get("to_move", "Black")
             if state.get("cpu_thinking", False):
-                self.status_label.setText(f"{to_move} to move")
+                self.status_label.setText(f"Move {move_no} — {to_move} to move")
                 self.thinking_label.setText("CPU is thinking...")
             else:
-                self.status_label.setText(f"{to_move} to move")
+                self.status_label.setText(f"Move {move_no} — {to_move} to move")
                 # Check if this is a pass situation
                 last_move_info = state.get("last_move_info", "")
                 if "pass" in last_move_info.lower():
