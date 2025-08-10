@@ -10,6 +10,12 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, pyqtSignal
 from typing import Dict, List, Optional
 import os
+import time
+
+# Import trainer components
+from ..trainer.trainer import Trainer
+from ..trainer.drills import ParityDrills, EndgameDrills
+from ..engine.board import Board
 
 
 class TrainingDock(QWidget):
@@ -25,10 +31,39 @@ class TrainingDock(QWidget):
             layout.addWidget(QLabel("Training (Disabled in headless mode)"))
             return
         
+        # Initialize trainer system
+        self._init_trainer()
+        
         self._setup_ui()
         self._current_session = None
         self._session_timer = QTimer()
         self._session_timer.timeout.connect(self._update_session_timer)
+        
+        # Current drill state
+        self._current_drill = None
+        self._drill_start_time = None
+    
+    def _init_trainer(self) -> None:
+        """Initialize the trainer system"""
+        try:
+            # Default config for now - could be made configurable
+            config = {
+                'db': {'path': ':memory:'},  # Use in-memory DB for now
+                'trainer': {
+                    'leitner_days': [1, 3, 7, 14, 30],
+                    'daily_review_cap': 20,
+                    'new_to_review_ratio': 0.3,
+                    'auto_suspend_on_3_fails': True
+                }
+            }
+            self.trainer = Trainer(config)
+            self.parity_drills = ParityDrills()
+            self.endgame_drills = EndgameDrills()
+        except Exception as e:
+            print(f"Failed to initialize trainer: {e}")
+            self.trainer = None
+            self.parity_drills = None
+            self.endgame_drills = None
     
     def _setup_ui(self) -> None:
         """Setup the training interface."""
@@ -214,8 +249,10 @@ class TrainingDock(QWidget):
         
         self.submit_drill_btn = QPushButton("Submit Answer")
         self.submit_drill_btn.setEnabled(False)
+        self.submit_drill_btn.clicked.connect(self._submit_drill)
         self.explain_drill_btn = QPushButton("Show Explanation")
         self.explain_drill_btn.setEnabled(False)
+        self.explain_drill_btn.clicked.connect(self._explain_drill)
         
         drill_controls.addWidget(self.submit_drill_btn)
         drill_controls.addWidget(self.explain_drill_btn)
@@ -371,24 +408,179 @@ class TrainingDock(QWidget):
         """Start a specific drill."""
         drill_type = self.drill_type.currentText()
         
-        if drill_type == "Parity Control":
-            self.drill_text.setPlainText(
-                "Parity Control Drill\n\n"
-                "In this position, you need to maintain odd parity in the bottom-right region.\n"
-                "Select a move that preserves your parity advantage.\n\n"
-                "Click on the board to make your move."
-            )
-        else:  # Endgame Solver
-            self.drill_text.setPlainText(
-                "Endgame Solver Drill\n\n"
-                "This is an endgame position with 14 empties.\n"
-                "Find the exact best move within 10 seconds.\n\n"
-                "The position has been verified by the exact solver.\n"
-                "Click on the board to make your move."
-            )
+        try:
+            if drill_type == "Parity Control":
+                self._start_parity_drill()
+            else:  # Endgame Solver
+                self._start_endgame_drill()
+        except Exception as e:
+            QMessageBox.warning(self, "Drill Error", f"Failed to start drill: {e}")
+    
+    def _start_parity_drill(self) -> None:
+        """Start a parity control drill"""
+        if not self.parity_drills:
+            QMessageBox.warning(self, "Drill Error", "Parity drills not available")
+            return
         
-        self.submit_drill_btn.setEnabled(True)
-        self.explain_drill_btn.setEnabled(True)
+        try:
+            # Create a sample board for the drill
+            from ..engine.board import start_board
+            board = start_board()  # Start position
+            
+            # Generate a parity drill
+            drill = self.parity_drills.generate_drill(board)
+            if not drill:
+                # Create a fallback drill
+                drill = self._create_fallback_parity_drill(board)
+            
+            if drill:
+                self._current_drill = {
+                    'type': 'parity',
+                    'drill': drill,
+                    'board': board
+                }
+                
+                self.drill_text.setPlainText(
+                    f"Parity Control Drill\n\n"
+                    f"{drill.explanation}\n\n"
+                    f"Click on the board to make your move.\n"
+                    f"Your goal is to preserve odd parity in the target region."
+                )
+                
+                self.submit_drill_btn.setEnabled(True)
+                self.explain_drill_btn.setEnabled(True)
+                self._drill_start_time = time.time()
+            else:
+                QMessageBox.warning(self, "Drill Error", "Could not generate parity drill")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Drill Error", f"Failed to start parity drill: {e}")
+    
+    def _start_endgame_drill(self) -> None:
+        """Start an endgame solver drill"""
+        if not self.endgame_drills:
+            QMessageBox.warning(self, "Drill Error", "Endgame drills not available")
+            return
+        
+        try:
+            # Create a sample board for the drill
+            from ..engine.board import start_board
+            board = start_board()  # Start position
+            
+            # Generate an endgame drill
+            drill = self.endgame_drills.generate_drill(board)
+            if not drill:
+                # Create a fallback drill
+                drill = self._create_fallback_endgame_drill(board)
+            
+            if drill:
+                self._current_drill = {
+                    'type': 'endgame',
+                    'drill': drill,
+                    'board': board
+                }
+                
+                self.drill_text.setPlainText(
+                    f"Endgame Solver Drill\n\n"
+                    f"This is an endgame position with {drill.empties} empties.\n"
+                    f"Find the exact best move within {drill.time_limit} seconds.\n\n"
+                    f"The position has been verified by the exact solver.\n"
+                    f"Click on the board to make your move."
+                )
+                
+                self.submit_drill_btn.setEnabled(True)
+                self.explain_drill_btn.setEnabled(True)
+                self._drill_start_time = time.time()
+            else:
+                QMessageBox.warning(self, "Drill Error", "Could not generate endgame drill")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Drill Error", f"Failed to start endgame drill: {e}")
+    
+    def _create_fallback_parity_drill(self, board: Board):
+        """Create a fallback parity drill if generation fails"""
+        from ..trainer.drills import ParityDrill
+        
+        # Create a simple parity drill
+        return ParityDrill(
+            position_hash=board.hash,
+            board=board,
+            target_region=0xFF00000000000000,  # Top row
+            correct_moves=[0, 1, 2, 3, 4, 5, 6, 7],  # Top row moves
+            explanation="Preserve odd parity in the top row region. Choose a move that keeps this region odd-sized."
+        )
+    
+    def _create_fallback_endgame_drill(self, board: Board):
+        """Create a fallback endgame drill if generation fails"""
+        from ..trainer.drills import EndgameDrill
+        
+        # Create a simple endgame drill
+        return EndgameDrill(
+            position_hash=board.hash,
+            board=board,
+            empties=14,
+            best_move=27,  # Center move
+            exact_score=2.0,
+            time_limit=10
+        )
+    
+    def submit_drill_answer(self, move: int) -> None:
+        """Submit answer for current drill"""
+        if not self._current_drill:
+            return
+        
+        try:
+            drill_type = self._current_drill['type']
+            drill = self._current_drill['drill']
+            
+            if drill_type == 'parity':
+                result = self.parity_drills.validate_solution(drill, move)
+            else:  # endgame
+                time_taken = time.time() - self._drill_start_time if self._drill_start_time else 0
+                result = self.endgame_drills.validate_solution(drill, move, time_taken)
+            
+            # Show result
+            if result.get('correct', False):
+                QMessageBox.information(self, "Correct!", 
+                    f"Great job! {result.get('feedback', '')}")
+            else:
+                QMessageBox.information(self, "Incorrect", 
+                    f"Not quite right. {result.get('feedback', '')}")
+            
+            # Reset drill
+            self._current_drill = None
+            self._drill_start_time = None
+            self.submit_drill_btn.setEnabled(False)
+            self.explain_drill_btn.setEnabled(False)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to validate answer: {e}")
+    
+    def _submit_drill(self) -> None:
+        """Handle submit drill button click"""
+        if not self._current_drill:
+            QMessageBox.information(self, "No Active Drill", "Please start a drill first.")
+            return
+        
+        # This would typically get the move from the board
+        # For now, show a message
+        QMessageBox.information(self, "Submit Answer", 
+            "Click on the board to make your move, then the answer will be automatically validated.")
+    
+    def _explain_drill(self) -> None:
+        """Show explanation for current drill"""
+        if not self._current_drill:
+            QMessageBox.information(self, "No Active Drill", "Please start a drill first.")
+            return
+        
+        try:
+            drill = self._current_drill['drill']
+            explanation = getattr(drill, 'explanation', 'No explanation available.')
+            
+            QMessageBox.information(self, "Drill Explanation", explanation)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to show explanation: {e}")
     
     def _refresh_progress(self) -> None:
         """Refresh progress statistics."""

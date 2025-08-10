@@ -52,6 +52,7 @@ from .insights_dock import InsightsDock
 from .tree_view import TreeView
 from .training_dock import TrainingDock
 from .game_controls import GameControlsWidget
+from .advantage_graph import AdvantageGraphWidget
 from .actions import register_actions
 from ..logging_setup import attach_window_instrumentation
 
@@ -80,7 +81,7 @@ class MainWindow(BaseWindow):
         self.setWindowTitle("Othello Coach")
 
         # Central UI uses responsive splitters and tabs for scalability
-        # Left: scalable board; Right: tabs for Play/Insights/Tree/Training
+        # Left: scalable board; Right: tabs for Play/Insights/Tree/Training + compact advantage graph
         self.board = BoardWidget()
         self.board.setObjectName("BoardView")
 
@@ -88,17 +89,30 @@ class MainWindow(BaseWindow):
         self.insights = InsightsDock()
         self.tree = TreeView()
         self.training = TrainingDock()
+        self.advantage_graph = AdvantageGraphWidget()
 
+        # Create right side panel with tabs and compact advantage graph
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(5)
+        
+        # Add tabs at the top
         tabs = QTabWidget()
         tabs.addTab(self.game_controls, "Play")
         tabs.addTab(self.insights, "Insights")
         tabs.addTab(self.tree, "Tree")
         tabs.addTab(self.training, "Training")
+        right_layout.addWidget(tabs)
+        
+        # Add compact advantage graph below tabs
+        right_layout.addWidget(self.advantage_graph)
+        right_layout.addStretch()  # Push advantage graph to top of right side
 
         # Outer splitter allows user to resize board vs. side panel
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.board)
-        splitter.addWidget(tabs)
+        splitter.addWidget(right_panel) # Add the right_panel to the splitter
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setChildrenCollapsible(False)
@@ -122,6 +136,8 @@ class MainWindow(BaseWindow):
         self.tree.set_main_window(self)
         # Wire game controls to board
         self._connect_game_controls()
+        # Wire board game state changes to advantage graph
+        self.board.game_state_changed.connect(self._on_game_state_changed)
 
         # Modern toolbar and status bar
         self._create_toolbar()
@@ -294,6 +310,21 @@ class MainWindow(BaseWindow):
         self.board.game_state_changed.connect(self.game_controls.update_game_state)
         # Drive status bar updates
         self.board.game_state_changed.connect(self._update_status_bar)
+
+    def _on_game_state_changed(self, state: dict) -> None:
+        """Handle game state changes and update advantage graph"""
+        if _OFFSCREEN:
+            return
+            
+        # Check if this is a new game (ply = 0)
+        if state.get("ply", 0) == 0:
+            # Reset advantage graph for new game
+            if hasattr(self, 'advantage_graph') and self.advantage_graph:
+                self.advantage_graph.new_game()
+        
+        # Update advantage graph with current board position
+        if hasattr(self, 'advantage_graph') and self.advantage_graph:
+            self.advantage_graph.update_advantage(self.board.board)
 
     def _create_toolbar(self) -> None:
         if _OFFSCREEN:
