@@ -66,6 +66,29 @@ class Searcher:
             if (time.perf_counter() - start) * 1000 > limits.time_ms:
                 break
         elapsed_ms = int((time.perf_counter() - start) * 1000)
+        
+        # Ensure we always have a valid move and PV
+        if best_move is None or not pv:
+            # Fallback: find the best legal move by evaluating all legal moves
+            mask = legal_moves_mask(board.B, board.W, board.stm)
+            if mask != 0:
+                best_score = -10_000
+                best_move = -1
+                m = mask
+                while m:
+                    lsb = m & -m
+                    sq = lsb.bit_length() - 1
+                    m ^= lsb
+                    b2, _ = make_move(board, sq)
+                    score = -evaluate(b2)
+                    if score > best_score:
+                        best_score = score
+                        best_move = sq
+                
+                if best_move >= 0:
+                    pv = [best_move]
+                    best_move = best_move
+        
         return SearchResult(best_move, best_score, len(pv), self.nodes, elapsed_ms, pv)
 
     def _negamax(self, board: Board, depth: int, alpha: int, beta: int, start, limits: SearchLimits, ply: int) -> Tuple[int, List[int]]:
@@ -111,7 +134,27 @@ class Searcher:
                     alpha = best_score
             return best_score, ([best_sq] if best_sq >= 0 else [])
         if depth == 0:
-            return evaluate(board), []
+            # At leaf nodes, we need to return a move to ensure the PV is complete
+            # Find the best legal move by evaluating all legal moves
+            mask = legal_moves_mask(board.B, board.W, board.stm)
+            if mask == 0:
+                # No legal moves - pass
+                return evaluate(board), []
+            
+            best_score = -10_000
+            best_move = -1
+            m = mask
+            while m:
+                lsb = m & -m
+                sq = lsb.bit_length() - 1
+                m ^= lsb
+                b2, _ = make_move(board, sq)
+                score = -evaluate(b2)
+                if score > best_score:
+                    best_score = score
+                    best_move = sq
+            
+            return best_score, [best_move] if best_move >= 0 else []
 
         self.nodes += 1
         entry = self.tt.probe(board.hash)

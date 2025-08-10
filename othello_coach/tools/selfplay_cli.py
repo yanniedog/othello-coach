@@ -110,8 +110,20 @@ def main():
         # Progress callback for CLI
         def progress_callback(message, percentage):
             if percentage >= 0:
+                # Show progress bar for CLI
+                bar_length = 50
+                filled_length = int(bar_length * percentage / 100)
+                bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                
+                # Clear line and show progress
+                print(f"\r[{bar}] {percentage:5.1f}% - {message}", end='', flush=True)
+                
+                if percentage >= 100:
+                    print()  # New line when complete
+                    
                 logging.getLogger(__name__).info("Progress: %s (%.1f%%)", message, percentage)
             else:
+                print(f"\n⚠️  {message}")
                 logging.getLogger(__name__).warning("Progress: %s", message)
         
         matches = runner.run_round_robin(

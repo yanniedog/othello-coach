@@ -37,6 +37,10 @@ class GauntletRunner:
         self.engine_version = engine_version
         self.glicko = GlickoCalculator(tau=0.5)
         
+        # Performance optimizations
+        self._engine_cache = {}  # Cache engine instances
+        self._strength_cache = {}  # Cache strength profiles
+        
         # Load or create ratings ladder
         self.ladder = self._load_ladder()
     
@@ -170,6 +174,13 @@ class GauntletRunner:
         
         return completed_matches
     
+    def _get_cached_strength(self, profile: str) -> 'StrengthProfile':
+        """Get cached strength profile to avoid repeated lookups"""
+        if profile not in self._strength_cache:
+            from ..engine.strength import get_strength_profile
+            self._strength_cache[profile] = get_strength_profile(profile)
+        return self._strength_cache[profile]
+    
     def _play_match(self, match: GauntletMatch, root_noise: bool = True) -> GauntletMatch:
         """Play a single match"""
         match.started_at = datetime.now()
@@ -179,13 +190,16 @@ class GauntletRunner:
             random.seed(match.seed)
         
         # Get strength profiles
-        white_strength = get_strength_profile(match.white_profile)
-        black_strength = get_strength_profile(match.black_profile)
+        white_strength = self._get_cached_strength(match.white_profile)
+        black_strength = self._get_cached_strength(match.black_profile)
         
         # Play the game
         board = Board(B=0x0000000810000000, W=0x0000001008000000, stm=0, ply=0, hash=0)
         moves = []
         passes = []  # Track pass moves
+        
+        # Track game progress for debugging
+        game_start_time = time.time()
         
         while True:
             # Check for game end
@@ -210,9 +224,27 @@ class GauntletRunner:
             apply_noise = root_noise and len(moves) < 6
             
             # Search for best move
+            move_start_time = time.time()
             move = self._get_engine_move(board, strength, apply_noise)
+            move_time = time.time() - move_start_time
+            
+            # Log slow moves for debugging
+            if move_time > 1.0:  # More than 1 second
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Slow move: %.2fs for move %d in %s vs %s game", 
+                    move_time, len(moves), match.white_profile, match.black_profile
+                )
             
             if move is None:
+                # Log why the engine failed
+                import logging
+                logging.getLogger(__name__).error(
+                    "Engine returned None for move in %s vs %s game at move %d. Board state: B=%s, W=%s, stm=%d, legal_moves=%s",
+                    match.white_profile, match.black_profile, len(moves), 
+                    bin(board.B), bin(board.W), board.stm,
+                    bin(generate_legal_mask(board.B, board.W, board.stm))
+                )
                 break  # Engine failed
             
             # Make the move
@@ -256,6 +288,14 @@ class GauntletRunner:
             result = search_position(board, limits)
             
             if not result or not result.pv:
+                # Log why search failed
+                import logging
+                logging.getLogger(__name__).error(
+                    "Search failed for %s vs %s: result=%s, pv=%s",
+                    "white" if board.stm == 1 else "black",
+                    "black" if board.stm == 1 else "white",
+                    result, result.pv if result else None
+                )
                 return None
             
             # Apply strength-based move selection
@@ -278,8 +318,15 @@ class GauntletRunner:
             if legal_mask & (1 << sq):
                 legal_moves.append(sq)
         
+        # This should never happen if called correctly, but provide a fallback
         if not legal_moves:
-            return None
+            # If somehow no legal moves, this indicates a bug - log and return a safe move
+            import logging
+            logging.getLogger(__name__).error(
+                "No legal moves found in _apply_strength_selection - this should not happen"
+            )
+            # Return a default move (this should never be reached in normal play)
+            return 0
         
         # For simplicity, use best move with some noise
         best_move = result.pv[0] if result.pv else legal_moves[0]
@@ -307,7 +354,10 @@ class GauntletRunner:
         player_results = {}
         
         # Batch save all games at once instead of one by one
-        self._batch_save_games(matches)
+        # Use a separate thread for database operations to avoid blocking
+        import threading
+        db_thread = threading.Thread(target=self._batch_save_games, args=(matches,))
+        db_thread.start()
         
         for match in matches:
             if match.result is None:
@@ -341,6 +391,9 @@ class GauntletRunner:
                 profile, old_rating.rating, old_rating.rd, new_rating.rating, new_rating.rd,
             )
         
+        # Wait for database save to complete
+        db_thread.join()
+        
         # Save to database
         self._save_ladder()
     
@@ -353,6 +406,11 @@ class GauntletRunner:
             return
             
         engine = create_engine(f"sqlite:///{self.db_path}")
+        
+        # Ensure schema exists for in-memory databases
+        if self.db_path == ":memory:":
+            self._ensure_schema(engine)
+            
         Session = sessionmaker(bind=engine)
         
         with Session() as session:
@@ -393,6 +451,11 @@ class GauntletRunner:
         from sqlalchemy.orm import sessionmaker
         
         engine = create_engine(f"sqlite:///{self.db_path}")
+        
+        # Ensure schema exists for in-memory databases
+        if self.db_path == ":memory:":
+            self._ensure_schema(engine)
+            
         Session = sessionmaker(bind=engine)
         
         with Session() as session:

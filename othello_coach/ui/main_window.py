@@ -759,6 +759,8 @@ class MainWindow(BaseWindow):
         # Create progress dialog
         progress = QProgressDialog("Initializing gauntlet...", "Cancel", 0, 100, self)
         progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)  # Show immediately
+        progress.setLabelText("Initializing gauntlet...")
         progress.show()
         
         try:
@@ -810,9 +812,29 @@ class MainWindow(BaseWindow):
             # Create and start thread
             self.gauntlet_thread = GauntletThread(selected_profiles, games, workers, noise, DB_PATH)
             
+            # Track match progress
+            self.match_count = 0
+            self.total_matches = len(selected_profiles) * (len(selected_profiles) - 1) * games
+            
             def update_progress(message, value):
-                progress.setLabelText(message)
-                progress.setValue(value)
+                if value >= 0:
+                    # Extract match count from message if available
+                    if "Match " in message and "/" in message:
+                        try:
+                            # Parse "Match X/Y: profile1 vs profile2 = result (Z moves)"
+                            match_part = message.split(":")[0]
+                            current, total = match_part.split("Match ")[1].split("/")
+                            self.match_count = int(current)
+                            progress.setLabelText(f"{message}\n\nProgress: {self.match_count}/{self.total_matches} matches completed")
+                        except:
+                            progress.setLabelText(message)
+                    else:
+                        progress.setLabelText(message)
+                    progress.setValue(value)
+                else:
+                    # Handle error messages
+                    progress.setLabelText(f"⚠️ {message}")
+                    progress.setValue(progress.value())  # Keep current value
             
             def gauntlet_finished(matches):
                 progress.close()
