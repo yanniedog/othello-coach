@@ -57,21 +57,6 @@ class AdvantageGraphWidget(QWidget):
         title_label.setStyleSheet("color: white; margin-bottom: 3px;")  # Reduced margin
         layout.addWidget(title_label)
         
-        # Legend
-        legend_layout = QHBoxLayout()
-        
-        black_label = QLabel("Black Advantage")
-        black_label.setStyleSheet("color: white; font-size: 8px;")  # Reduced from 10px
-        legend_layout.addWidget(black_label)
-        
-        legend_layout.addStretch()
-        
-        white_label = QLabel("White Advantage")
-        white_label.setStyleSheet("color: white; font-size: 8px;")  # Reduced from 10px
-        legend_layout.addWidget(white_label)
-        
-        layout.addLayout(legend_layout)
-        
         # Add some spacing before the graph area
         layout.addSpacing(5)  # Reduced from 10
         
@@ -189,8 +174,8 @@ class AdvantageGraphWidget(QWidget):
             
         # Calculate graph dimensions (accounting for margins and labels)
         margin = 15  # Reduced from 20
-        top_margin = 45  # Reduced from 60 (space for title and legend)
-        bottom_margin = 25  # Reduced from 40 (space for advantage label)
+        top_margin = 50  # Increased to provide space for title and spacing
+        bottom_margin = 35  # Increased to provide space for advantage label
         graph_width = widget_rect.width() - 2 * margin
         graph_height = widget_rect.height() - top_margin - bottom_margin
         

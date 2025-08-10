@@ -17,6 +17,7 @@ class GameControlsWidget(QWidget):
     cpu_strength_changed = pyqtSignal(str, str)  # black_strength, white_strength
     cpu_delay_changed = pyqtSignal(int)
     new_game_requested = pyqtSignal()
+    start_game_requested = pyqtSignal()
     
     def __init__(self) -> None:
         super().__init__()
@@ -52,7 +53,7 @@ class GameControlsWidget(QWidget):
         self.black_strength_combo = QComboBox()
         strength_profiles = list_strength_profiles()
         self.black_strength_combo.addItems(strength_profiles)
-        self.black_strength_combo.setCurrentText("elo_1400")
+        self.black_strength_combo.setCurrentText("elo_2000")
         black_layout.addWidget(self.black_strength_combo)
         cpu_layout.addLayout(black_layout)
         
@@ -61,7 +62,7 @@ class GameControlsWidget(QWidget):
         white_layout.addWidget(QLabel("White CPU:"))
         self.white_strength_combo = QComboBox()
         self.white_strength_combo.addItems(strength_profiles)
-        self.white_strength_combo.setCurrentText("elo_1400")
+        self.white_strength_combo.setCurrentText("elo_2000")
         white_layout.addWidget(self.white_strength_combo)
         cpu_layout.addLayout(white_layout)
         
@@ -71,7 +72,7 @@ class GameControlsWidget(QWidget):
         self.delay_spin = QSpinBox()
         self.delay_spin.setRange(0, 5000)
         self.delay_spin.setSingleStep(100)
-        self.delay_spin.setValue(1000)
+        self.delay_spin.setValue(100)
         self.delay_spin.setSuffix(" ms")
         delay_layout.addWidget(self.delay_spin)
         cpu_layout.addLayout(delay_layout)
@@ -84,6 +85,11 @@ class GameControlsWidget(QWidget):
         
         self.new_game_btn = QPushButton("New Game")
         buttons_layout.addWidget(self.new_game_btn)
+        
+        # Start Game button for CPU vs CPU mode
+        self.start_game_btn = QPushButton("Start Game")
+        self.start_game_btn.setVisible(False)  # Initially hidden
+        buttons_layout.addWidget(self.start_game_btn)
         
         layout.addWidget(buttons_group)
         
@@ -110,6 +116,7 @@ class GameControlsWidget(QWidget):
         self.white_strength_combo.currentTextChanged.connect(self._on_strength_changed)
         self.delay_spin.valueChanged.connect(self.cpu_delay_changed.emit)
         self.new_game_btn.clicked.connect(self.new_game_requested.emit)
+        self.start_game_btn.clicked.connect(self.start_game_requested.emit)
     
     def _on_mode_changed(self) -> None:
         """Handle game mode change"""
@@ -133,7 +140,9 @@ class GameControlsWidget(QWidget):
         """Show/hide CPU controls based on game mode"""
         mode_text = self.mode_combo.currentText()
         show_cpu = mode_text in ["Human vs CPU", "CPU vs CPU"]
+        show_start_game = mode_text == "CPU vs CPU"
         self.cpu_group.setVisible(show_cpu)
+        self.start_game_btn.setVisible(show_start_game)
     
     def update_game_state(self, state: dict) -> None:
         """Update the display based on game state"""

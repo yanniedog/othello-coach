@@ -32,9 +32,12 @@ class BoardWidget(QGraphicsView):
         
         # Game mode settings
         self.game_mode = "human_vs_human"  # "human_vs_human", "human_vs_cpu", "cpu_vs_cpu"
-        self.cpu_black_strength = "elo_1400"
-        self.cpu_white_strength = "elo_1400"
-        self.cpu_move_delay_ms = 1000
+        self.cpu_black_strength = "elo_2000"
+        self.cpu_white_strength = "elo_2000"
+        self.cpu_move_delay_ms = 100
+        
+        # Game state control
+        self.game_started = False  # Flag to control when CPU vs CPU games start
         
         # Game state tracking
         self.last_move_info = ""  # Track information about the last move/action
@@ -188,7 +191,7 @@ class BoardWidget(QGraphicsView):
         for _ in range(2):
             if legal_moves_mask(self.board) != 0:
                 # Current player has legal moves
-                if schedule:
+                if schedule and self.game_started:
                     self._schedule_cpu_move_if_needed()
                 return
             
@@ -274,6 +277,7 @@ class BoardWidget(QGraphicsView):
         """Set the game mode: 'human_vs_human', 'human_vs_cpu', or 'cpu_vs_cpu'"""
         self.game_mode = mode
         self.cpu_timer.stop()  # Stop any pending CPU moves
+        self.game_started = False  # Reset game started flag when mode changes
         self._ensure_playable_state()
         self._emit_game_state()
     
@@ -288,6 +292,12 @@ class BoardWidget(QGraphicsView):
     def set_cpu_move_delay(self, delay_ms: int) -> None:
         """Set delay for CPU moves to make them feel more natural"""
         self.cpu_move_delay_ms = max(0, min(5000, delay_ms))
+    
+    def start_game(self) -> None:
+        """Start the game (enables CPU moves for CPU vs CPU mode)"""
+        self.game_started = True
+        self._ensure_playable_state()
+        self._emit_game_state()
     
     def _is_human_turn(self) -> bool:
         """Check if it's a human player's turn"""
@@ -315,7 +325,7 @@ class BoardWidget(QGraphicsView):
     
     def _schedule_cpu_move_if_needed(self) -> None:
         """Schedule a CPU move if it's CPU's turn"""
-        if not self._is_cpu_turn() or self.game_over or self.cpu_busy:
+        if not self._is_cpu_turn() or self.game_over or self.cpu_busy or not self.game_started:
             return
         # Immediate scheduling if delay is zero
         if self.cpu_move_delay_ms <= 0:
@@ -337,7 +347,7 @@ class BoardWidget(QGraphicsView):
                 self._stall_ticks = 0
                 self._last_ply_seen = self.board.ply
             # If CPU should move but nothing is scheduled, try to kick it
-            if self._is_cpu_turn() and not self.cpu_busy and not self.cpu_timer.isActive():
+            if self._is_cpu_turn() and not self.cpu_busy and not self.cpu_timer.isActive() and self.game_started:
                 self._stall_ticks += 1
                 if self.cpu_move_delay_ms <= 0:
                     log_event("game.cpu", "watchdog_kick_immediate", ply=self.board.ply, stall_ticks=self._stall_ticks)
@@ -540,6 +550,7 @@ class BoardWidget(QGraphicsView):
         self.cpu_timer.stop()
         self.board = start_board()
         self.game_over = False
+        self.game_started = True  # Enable CPU moves when New Game is clicked
         self.last_move_info = "New game started"
         self._ensure_playable_state()
         self._draw()

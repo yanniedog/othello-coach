@@ -305,6 +305,7 @@ class MainWindow(BaseWindow):
         )
         self.game_controls.cpu_delay_changed.connect(self.board.set_cpu_move_delay)
         self.game_controls.new_game_requested.connect(self.board.new_game)
+        self.game_controls.start_game_requested.connect(self.board.start_game)
         
         # Connect board state changes to game controls
         self.board.game_state_changed.connect(self.game_controls.update_game_state)
