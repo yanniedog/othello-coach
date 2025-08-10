@@ -1,4 +1,5 @@
 use crate::bitboards::*;
+use crate::popcount::popcount;
 
 /// Calculate stability proxy using same algorithm as Python
 pub fn calculate_stability_proxy(b: u64, w: u64) -> i16 {
@@ -9,7 +10,7 @@ pub fn calculate_stability_proxy(b: u64, w: u64) -> i16 {
 }
 
 /// Stable count matching Python algorithm exactly  
-fn stable_count(mask_color: u64, mask_other: u64) -> u32 {
+fn stable_count(mask_color: u64, _mask_other: u64) -> u32 {
     let mut stable = 0u32;
     let corners = [0, 7, 56, 63]; // A1, H1, A8, H8
     
@@ -52,41 +53,6 @@ fn stable_count(mask_color: u64, mask_other: u64) -> u32 {
                 stable += 1;
                 cur = nr;
             }
-        }
-    }
-    
-    stable
-}
-
-/// Flood fill stability calculation from corners and safe edges
-fn flood_stability(pieces: u64, all_pieces: u64) -> u64 {
-    let mut stable = 0u64;
-    let corners = 0x8100000000000081u64; // A1, H1, A8, H8
-    
-    // Start with corners
-    stable |= pieces & corners;
-    
-    let mut changed = true;
-    while changed {
-        changed = false;
-        let old_stable = stable;
-        
-        // Flood along ranks and files
-        for &dir in &[1, -1, 8, -8] { // E, W, N, S
-            let adjacent = shift_dir(stable, dir);
-            let new_stable = pieces & adjacent & all_pieces;
-            stable |= new_stable;
-        }
-        
-        // Flood along diagonals
-        for &dir in &[9, -9, 7, -7] { // NE, SW, NW, SE
-            let adjacent = shift_dir(stable, dir);
-            let new_stable = pieces & adjacent & all_pieces;
-            stable |= new_stable;
-        }
-        
-        if stable != old_stable {
-            changed = true;
         }
     }
     

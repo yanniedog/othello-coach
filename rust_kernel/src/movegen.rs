@@ -1,4 +1,5 @@
 use crate::bitboards::*;
+use crate::popcount::popcount;
 
 /// Generate legal move mask using simple ray casting
 pub fn generate_legal_mask(b: u64, w: u64, stm: u8) -> u64 {
@@ -118,5 +119,5 @@ pub fn calculate_potential_mobility(b: u64, w: u64, stm: u8) -> i16 {
     let opp_potential = popcount(opp & adjacent_to_empty) as i16;
     let own_potential = popcount(own & adjacent_to_empty) as i16;
     
-    own_potential - opp_potential
+    opp_potential - own_potential
 }

@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::PyModule;
 
 mod bitboards;
 mod movegen;
@@ -6,7 +7,6 @@ mod stability;
 mod solver;
 mod popcount;
 
-use bitboards::*;
 use movegen::*;
 use stability::*;
 use solver::*;
@@ -55,7 +55,7 @@ fn exact_solver(b: u64, w: u64, stm: u8, empties: u8, tt_mb: u32) -> PyResult<i1
 
 /// Python extension module: installs as `rust_kernel._rust_kernel`
 #[pymodule]
-fn _rust_kernel(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rust_kernel(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(legal_mask, m)?)?;
     m.add_function(wrap_pyfunction!(flip_mask, m)?)?;
     m.add_function(wrap_pyfunction!(potential_mobility, m)?)?;

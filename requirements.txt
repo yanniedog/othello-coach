@@ -1,0 +1,20 @@
+# Othello Coach - Python Dependencies
+# Core dependencies
+PyQt6>=6.4.0
+numpy>=1.21.0
+pytest>=7.0.0
+pytest-qt>=4.0.0
+
+# Rust integration tools
+maturin>=1.0.0
+
+# Development and testing tools
+black>=22.0.0
+flake8>=5.0.0
+mypy>=1.0.0
+
+# Optional: Performance monitoring
+psutil>=5.8.0
+
+# Note: Rust toolchain (rustc, cargo, rustup) must be installed separately
+# Run 'python install_rust.py' to install Rust automatically

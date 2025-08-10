@@ -151,9 +151,12 @@ def extract_features_cached(hash_key: int, B: int, W: int, stm: int) -> Dict[str
         if hasattr(rust_kernel, 'potential_mobility') and rust_kernel.AVAILABLE:
             potential_mobility = int(rust_kernel.potential_mobility(B, W, stm))
         else:
-            potential_mobility = own_pot - opp_pot
+            # Fix: potential mobility should be opp_pot - own_pot to match Rust kernel
+            # This measures opponent's potential mobility minus own potential mobility
+            potential_mobility = opp_pot - own_pot
     except Exception:
-        potential_mobility = own_pot - opp_pot
+        # Fix: potential mobility should be opp_pot - own_pot to match Rust kernel
+        potential_mobility = opp_pot - own_pot
 
     return {
         "mobility_stm": mask_stm.bit_count(),

@@ -1,0 +1,17 @@
+# Test dependencies for Othello Coach GUI tests
+pytest>=7.0.0
+pytest-qt>=4.2.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-xdist>=3.0.0
+
+# GUI testing
+PyQt6>=6.4.0
+PyQt6-Qt6>=6.4.0
+
+# Coverage reporting
+coverage>=6.5.0
+
+# Additional testing utilities
+pytest-timeout>=2.1.0
+pytest-html>=3.1.0
