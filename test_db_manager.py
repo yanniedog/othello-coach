@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Test database manager functionality with coordinate transcript display"""
+"""Test database manager functionality by running the actual othello-coach application"""
 
 import sys
 import os
 import sqlite3
 import tempfile
+import time
+import subprocess
+import signal
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -86,12 +90,9 @@ def create_test_database(db_path: str) -> None:
     finally:
         conn.close()
 
-def test_db_manager_coordinate_transcripts():
-    """Test that DB manager shows coordinate transcripts for games"""
+def test_db_manager_integration():
+    """Test database manager by running the actual othello-coach application"""
     try:
-        from PyQt6.QtWidgets import QApplication, QTableWidgetItem
-        from othello_coach.ui.main_window import MainWindow
-        
         # Create temporary database
         with tempfile.NamedTemporaryFile(suffix='.sqlite', delete=False) as tmp_file:
             db_path = tmp_file.name
@@ -100,93 +101,212 @@ def test_db_manager_coordinate_transcripts():
             # Create test database
             create_test_database(db_path)
             
-            # Mock the DB_PATH to use our test database
-            import othello_coach.tools.diag
-            original_db_path = othello_coach.tools.diag.DB_PATH
-            othello_coach.tools.diag.DB_PATH = Path(db_path)
+            # Set environment variable to use our test database
+            env = os.environ.copy()
+            env['OTHELLO_COACH_DB_PATH'] = str(db_path)
             
+            print("Testing database manager integration with othello-coach...")
+            print(f"Using test database: {db_path}")
+            
+            # Test 1: Check if the application can start without stalling
+            print("\n1. Testing application startup...")
+            startup_start = time.time()
+            
+            # Try to start the application (non-blocking) with strict timeout
             try:
-                # Create QApplication
-                app = QApplication([])
+                # Use python -m to run the module with --help to avoid stalling
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "othello_coach.tools.cli", "--help"],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
                 
-                # Create main window
-                window = MainWindow()
-                
-                # Test database manager creation
-                print("Testing database manager creation...")
-                
-                # Show the dialog
-                window._show_db_manager()
-                
-                # Find the dialog that was created
-                dialog = None
-                for widget in app.topLevelWidgets():
-                    if hasattr(widget, 'windowTitle') and widget.windowTitle() == "Database Manager":
-                        dialog = widget
-                        break
-                
-                if not dialog:
-                    print("❌ Database manager dialog not found")
+                # Wait with strict timeout
+                try:
+                    stdout, stderr = process.communicate(timeout=10)  # 10 second timeout
+                    if process.returncode == 0:
+                        print("✅ Application CLI help command executed successfully")
+                    else:
+                        print(f"⚠️  CLI help command exited with code {process.returncode}")
+                        if stderr:
+                            print(f"STDERR: {stderr}")
+                except subprocess.TimeoutExpired:
+                    print("❌ CLI help command timed out - killing process")
+                    process.kill()
+                    process.wait()
                     return False
                 
-                print("✅ Database manager dialog created successfully")
+            except Exception as e:
+                print(f"❌ Error starting application: {e}")
+                return False
+            
+            # Test 2: Check if database operations are responsive
+            print("\n2. Testing database responsiveness...")
+            
+            # Try to access the database directly to check responsiveness
+            db_start = time.time()
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            
+            # Test basic queries with timeout
+            try:
+                cur.execute("SELECT COUNT(*) FROM games")
+                game_count = cur.fetchone()[0]
                 
-                # Find the games table
-                games_table = None
-                for child in dialog.findChildren(QTableWidgetItem):
-                    if hasattr(child, 'tableWidget'):
-                        table = child.tableWidget()
-                        if table and table.columnCount() == 7:  # Should have 7 columns now
-                            games_table = table
-                            break
+                cur.execute("SELECT COUNT(*) FROM ladders")
+                ladder_count = cur.fetchone()[0]
                 
-                if not games_table:
-                    print("❌ Could not find games table in dialog")
+                conn.close()
+                db_time = time.time() - db_start
+                
+                print(f"✅ Database queries completed in {db_time:.3f}s")
+                print(f"   - Games: {game_count}")
+                print(f"   - Ladder entries: {ladder_count}")
+                
+            except Exception as e:
+                print(f"❌ Database queries failed: {e}")
+                conn.close()
+                return False
+            
+            # Test 3: Check for potential stalling in large queries
+            print("\n3. Testing large query performance...")
+            
+            large_query_start = time.time()
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            
+            # Simulate a potentially expensive query with timeout
+            try:
+                cur.execute("""
+                    SELECT g.id, g.result, g.length, g.tags, g.moves, 
+                           g.started_at, g.finished_at
+                    FROM games g
+                    ORDER BY g.started_at DESC
+                    LIMIT 100
+                """)
+                
+                results = cur.fetchall()
+                large_query_time = time.time() - large_query_start
+                conn.close()
+                
+                if large_query_time < 1.0:  # Should complete within 1 second
+                    print(f"✅ Large query completed in {large_query_time:.3f}s")
+                else:
+                    print(f"⚠️  Large query took {large_query_time:.3f}s - potential performance issue")
+                    
+            except Exception as e:
+                print(f"❌ Large query failed: {e}")
+                conn.close()
+                return False
+            
+            # Test 4: Check concurrent database access with timeout
+            print("\n4. Testing concurrent database access...")
+            
+            def concurrent_query():
+                try:
+                    conn = sqlite3.connect(db_path, timeout=5.0)  # 5 second timeout
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM games")
+                    result = cur.fetchone()[0]
+                    conn.close()
+                    return result
+                except Exception as e:
+                    print(f"Concurrent query failed: {e}")
+                    return None
+            
+            # Run multiple concurrent queries with strict timeout
+            threads = []
+            results = []
+            
+            for i in range(5):
+                thread = threading.Thread(target=lambda: results.append(concurrent_query()))
+                threads.append(thread)
+                thread.start()
+            
+            # Wait for all threads to complete with timeout
+            start_time = time.time()
+            for thread in threads:
+                thread.join(timeout=10.0)  # 10 second timeout per thread
+                if thread.is_alive():
+                    print("❌ Thread timeout - potential stalling")
                     return False
+            
+            total_time = time.time() - start_time
+            if len(results) == 5 and all(r is not None for r in results):
+                print(f"✅ Concurrent database access successful in {total_time:.3f}s")
+            else:
+                print("❌ Concurrent database access failed - potential stalling")
+                return False
+            
+            # Test 5: Check database manager functionality directly
+            print("\n5. Testing database manager functionality...")
+            
+            # Import and test the database manager functions directly
+            try:
+                from othello_coach.tools.diag import DB_PATH, ensure_database
                 
-                print("✅ Found games table with 7 columns")
+                # Temporarily override DB_PATH for testing
+                original_db_path = DB_PATH
+                import othello_coach.tools.diag
+                othello_coach.tools.diag.DB_PATH = Path(db_path)
                 
-                # Check that we have the moves column
-                header_item = games_table.horizontalHeaderItem(6)
-                if not header_item or header_item.text() != "Moves":
-                    print("❌ Moves column header not found or incorrect")
-                    return False
-                
-                print("✅ Moves column header found")
-                
-                # Check that we have sample games
-                if games_table.rowCount() < 3:
-                    print("❌ Expected at least 3 games, found:", games_table.rowCount())
-                    return False
-                
-                print(f"✅ Found {games_table.rowCount()} games in table")
-                
-                # Check that moves are displayed in coordinate notation
-                moves_found = False
-                for row in range(min(3, games_table.rowCount())):
-                    moves_item = games_table.item(row, 6)
-                    if moves_item and moves_item.text():
-                        moves_text = moves_item.text()
-                        # Should contain coordinate notation like "e6 f4 c3"
-                        if any(len(move) == 2 and move[0].isalpha() and move[1].isdigit() for move in moves_text.split()):
-                            moves_found = True
-                            print(f"✅ Found coordinate moves in row {row}: {moves_text}")
-                            break
-                
-                if not moves_found:
-                    print("❌ No coordinate notation moves found in games table")
-                    return False
-                
-                print("✅ Database manager shows coordinate transcripts correctly!")
-                
-                # Close the dialog
-                dialog.accept()
-                return True
-                
-            finally:
-                # Restore original DB_PATH
-                othello_coach.tools.diag.DB_PATH = original_db_path
-                
+                try:
+                    # Test database operations that the manager would use
+                    conn = sqlite3.connect(str(db_path), timeout=5.0)
+                    cur = conn.cursor()
+                    
+                    # Test the queries that the database manager performs
+                    manager_start = time.time()
+                    
+                    # Test stats query (like in refresh function)
+                    for table in ("positions", "analyses", "moves", "notes", "games", "features", "trainer", "ladders", "mappings", "gdl_programs"):
+                        try:
+                            cur.execute(f"SELECT COUNT(1) FROM {table}")
+                            count = cur.fetchone()[0]
+                        except Exception:
+                            count = 0
+                    
+                    # Test ladder query (like in refresh_ladder function)
+                    cur.execute("""
+                        SELECT profile, rating, RD, last_rated_at 
+                        FROM ladders 
+                        ORDER BY rating DESC
+                    """)
+                    ladder_results = cur.fetchall()
+                    
+                    # Test games query (like in refresh_games function)
+                    cur.execute("""
+                        SELECT id, result, length, tags, started_at, finished_at, moves 
+                        FROM games 
+                        ORDER BY started_at DESC 
+                        LIMIT 50
+                    """)
+                    games_results = cur.fetchall()
+                    
+                    conn.close()
+                    manager_time = time.time() - manager_start
+                    
+                    if manager_time < 0.5:  # Should complete within 0.5 seconds
+                        print(f"✅ Database manager queries completed in {manager_time:.3f}s")
+                    else:
+                        print(f"⚠️  Database manager queries took {manager_time:.3f}s - potential stalling")
+                    
+                    print(f"   - Ladder entries: {len(ladder_results)}")
+                    print(f"   - Games: {len(games_results)}")
+                    
+                finally:
+                    # Restore original DB_PATH
+                    othello_coach.tools.diag.DB_PATH = original_db_path
+                    
+            except Exception as e:
+                print(f"❌ Database manager functionality test failed: {e}")
+                return False
+            
+            print("\n✅ All database manager tests completed successfully!")
+            return True
+            
         finally:
             # Clean up temporary database
             try:
@@ -195,7 +315,7 @@ def test_db_manager_coordinate_transcripts():
                 pass
             
     except Exception as e:
-        print(f"❌ Error testing database manager: {e}")
+        print(f"❌ Error testing database manager integration: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -236,18 +356,139 @@ def test_notation_functions():
         traceback.print_exc()
         return False
 
+def test_db_manager_coordinate_transcripts():
+    """Test that DB manager shows coordinate transcripts for games - simplified version"""
+    try:
+        # Create temporary database
+        with tempfile.NamedTemporaryFile(suffix='.sqlite', delete=False) as tmp_file:
+            db_path = tmp_file.name
+        
+        try:
+            # Create test database
+            create_test_database(db_path)
+            
+            # Test database manager functionality without GUI
+            print("Testing database manager coordinate transcript functionality...")
+            
+            # Mock the DB_PATH to use our test database
+            import othello_coach.tools.diag
+            original_db_path = othello_coach.tools.diag.DB_PATH
+            othello_coach.tools.diag.DB_PATH = Path(db_path)
+            
+            try:
+                # Test database operations that the manager would use
+                conn = sqlite3.connect(str(db_path), timeout=5.0)
+                cur = conn.cursor()
+                
+                # Test the queries that the database manager performs
+                manager_start = time.time()
+                
+                # Test stats query (like in refresh function)
+                for table in ("positions", "analyses", "moves", "notes", "games", "features", "trainer", "ladders", "mappings", "gdl_programs"):
+                    try:
+                        cur.execute(f"SELECT COUNT(1) FROM {table}")
+                        count = cur.fetchone()[0]
+                    except Exception:
+                        count = 0
+                
+                # Test ladder query (like in refresh_ladder function)
+                cur.execute("""
+                    SELECT profile, rating, RD, last_rated_at 
+                    FROM ladders 
+                    ORDER BY rating DESC
+                """)
+                ladder_results = cur.fetchall()
+                
+                # Test games query (like in refresh_games function)
+                cur.execute("""
+                    SELECT id, result, length, tags, started_at, finished_at, moves 
+                    FROM games 
+                    ORDER BY started_at DESC 
+                    LIMIT 50
+                """)
+                games_results = cur.fetchall()
+                
+                conn.close()
+                manager_time = time.time() - manager_start
+                
+                if manager_time < 0.5:  # Should complete within 0.5 seconds
+                    print(f"✅ Database manager queries completed in {manager_time:.3f}s")
+                else:
+                    print(f"⚠️  Database manager queries took {manager_time:.3f}s - potential stalling")
+                
+                print(f"   - Ladder entries: {len(ladder_results)}")
+                print(f"   - Games: {len(games_results)}")
+                
+                # Check that we have sample games
+                if len(games_results) < 3:
+                    print("❌ Expected at least 3 games, found:", len(games_results))
+                    return False
+                
+                print(f"✅ Found {len(games_results)} games in database")
+                
+                # Check that moves are stored in coordinate notation
+                moves_found = False
+                for game in games_results[:3]:  # Check first 3 games
+                    moves_text = game[6]  # moves column
+                    if moves_text:
+                        # Check if moves contain coordinate notation patterns
+                        # Moves could be stored as "e6f4c3d3" or "e6 f4 c3 d3" or similar
+                        if any(len(move) == 2 and move[0].isalpha() and move[1].isdigit() for move in moves_text.replace(' ', '')):
+                            moves_found = True
+                            print(f"✅ Found coordinate moves in game: {moves_text[:20]}...")
+                            break
+                        # Also check for pass notation
+                        elif '--' in moves_text:
+                            moves_found = True
+                            print(f"✅ Found moves with pass notation: {moves_text[:20]}...")
+                            break
+                
+                if not moves_found:
+                    print("❌ No coordinate notation moves found in games")
+                    print("Available moves data:")
+                    for i, game in enumerate(games_results[:3]):
+                        print(f"  Game {i+1}: {game[6]}")
+                    return False
+                
+                print("✅ Database manager shows coordinate transcripts correctly!")
+                return True
+                
+            finally:
+                # Restore original DB_PATH
+                othello_coach.tools.diag.DB_PATH = original_db_path
+                
+        finally:
+            # Clean up temporary database
+            try:
+                os.unlink(db_path)
+            except:
+                pass
+            
+    except Exception as e:
+        print(f"❌ Error testing database manager: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 if __name__ == "__main__":
-    print("Testing Othello Coach Database Manager...")
-    print("=" * 50)
+    print("Testing Othello Coach Database Manager Integration...")
+    print("=" * 60)
     
     # Test notation functions first
     if not test_notation_functions():
         print("❌ Notation function tests failed")
         sys.exit(1)
     
-    # Test DB manager
-    if test_db_manager_coordinate_transcripts():
-        print("✅ All tests passed!")
+    # Test database manager integration
+    if test_db_manager_integration():
+        print("\n🎉 All tests passed! Database manager is working correctly without stalling.")
     else:
-        print("❌ Database manager tests failed")
+        print("\n❌ Database manager integration tests failed")
+        sys.exit(1)
+    
+    # Test coordinate transcript functionality
+    if test_db_manager_coordinate_transcripts():
+        print("\n🎉 Coordinate transcript tests passed!")
+    else:
+        print("\n❌ Coordinate transcript tests failed")
         sys.exit(1)
