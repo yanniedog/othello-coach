@@ -1201,8 +1201,8 @@ class MainWindow(BaseWindow):
         games_tab = QWidget()
         games_layout = QVBoxLayout(games_tab)
         games_table = QTableWidget()
-        games_table.setColumnCount(6)
-        games_table.setHorizontalHeaderLabels(["ID", "Result", "Length", "Tags", "Started", "Finished"])
+        games_table.setColumnCount(7)
+        games_table.setHorizontalHeaderLabels(["ID", "Result", "Length", "Tags", "Started", "Finished", "Moves"])
         games_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         games_layout.addWidget(games_table)
         
@@ -1258,9 +1258,9 @@ class MainWindow(BaseWindow):
                 conn = sqlite3.connect(str(DB_PATH))
                 cur = conn.cursor()
                 
-                # Get recent games
+                # Get recent games with moves
                 cur.execute("""
-                    SELECT id, result, length, tags, started_at, finished_at 
+                    SELECT id, result, length, tags, started_at, finished_at, moves 
                     FROM games 
                     ORDER BY started_at DESC 
                     LIMIT 50
@@ -1268,13 +1268,32 @@ class MainWindow(BaseWindow):
                 results = cur.fetchall()
                 
                 games_table.setRowCount(len(results))
-                for i, (id, result, length, tags, started, finished) in enumerate(results):
+                for i, (id, result, length, tags, started, finished, moves) in enumerate(results):
                     games_table.setItem(i, 0, QTableWidgetItem(str(id)))
                     games_table.setItem(i, 1, QTableWidgetItem(str(result)))
                     games_table.setItem(i, 2, QTableWidgetItem(str(length)))
                     games_table.setItem(i, 3, QTableWidgetItem(str(tags)))
                     games_table.setItem(i, 4, QTableWidgetItem(str(started)))
                     games_table.setItem(i, 5, QTableWidgetItem(str(finished) if finished else "N/A"))
+                    
+                    # Format moves as coordinate notation
+                    if moves:
+                        try:
+                            from ..engine.notation import string_to_moves, coord_to_notation
+                            move_coords = string_to_moves(moves)
+                            formatted_moves = []
+                            for coord in move_coords:
+                                if coord == -1:  # Pass move
+                                    formatted_moves.append("--")
+                                else:
+                                    formatted_moves.append(coord_to_notation(coord))
+                            moves_display = " ".join(formatted_moves)
+                        except Exception:
+                            moves_display = str(moves)
+                    else:
+                        moves_display = "N/A"
+                    
+                    games_table.setItem(i, 6, QTableWidgetItem(moves_display))
                 
                 conn.close()
             except Exception as e:
