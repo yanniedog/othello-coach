@@ -351,6 +351,9 @@ class BoardWidget(QGraphicsView):
                         log_event("game.cpu", "watchdog_fallback", ply=self.board.ply)
                         self._play_fallback_move()
                         self._stall_ticks = 0
+                        # Reset failure count when watchdog intervenes
+                        if hasattr(self, '_cpu_failure_count'):
+                            self._cpu_failure_count = 0
         except Exception:
             # Never let watchdog crash the UI
             pass
@@ -432,12 +435,26 @@ class BoardWidget(QGraphicsView):
         
         except Exception as e:
             log_event("game.error", "cpu_move_failed", error=str(e))
-            # Attempt to recover by rescheduling
-            self._schedule_cpu_move_if_needed()
+            # Prevent infinite retry loops by checking if we've failed too many times
+            if not hasattr(self, '_cpu_failure_count'):
+                self._cpu_failure_count = 0
+            self._cpu_failure_count += 1
+            
+            if self._cpu_failure_count >= 3:
+                # Too many failures, force a fallback move
+                log_event("game.error", "cpu_move_fallback_forced", failure_count=self._cpu_failure_count)
+                if legal_moves_mask(self.board) != 0:
+                    self._play_fallback_move()
+                self._cpu_failure_count = 0  # Reset counter
+            else:
+                # Attempt to recover by rescheduling
+                self._schedule_cpu_move_if_needed()
         finally:
             self.cpu_busy = False
             # After finishing, ensure next move is queued if still CPU turn
-            self._schedule_cpu_move_if_needed()
+            # Only schedule if we didn't have too many failures
+            if not hasattr(self, '_cpu_failure_count') or self._cpu_failure_count < 3:
+                self._schedule_cpu_move_if_needed()
     
     def _apply_strength_effects(self, best_move: int, profile) -> int:
         """Apply strength-based effects like blunders and randomness"""

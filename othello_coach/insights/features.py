@@ -148,7 +148,10 @@ def extract_features_cached(hash_key: int, B: int, W: int, stm: int) -> Dict[str
     potential_mobility: int
     try:
         import rust_kernel  # type: ignore
-        potential_mobility = int(rust_kernel.potential_mobility(B, W, stm))
+        if hasattr(rust_kernel, 'potential_mobility') and rust_kernel.AVAILABLE:
+            potential_mobility = int(rust_kernel.potential_mobility(B, W, stm))
+        else:
+            potential_mobility = own_pot - opp_pot
     except Exception:
         potential_mobility = own_pot - opp_pot
 
@@ -179,9 +182,10 @@ def extract_features(board: Board) -> Dict[str, int]:
     # Ensure potential_mobility parity with Rust kernel if available
     try:
         import rust_kernel  # type: ignore
-        feats["potential_mobility"] = int(
-            rust_kernel.potential_mobility(board.B, board.W, board.stm)
-        )
+        if hasattr(rust_kernel, 'potential_mobility') and rust_kernel.AVAILABLE:
+            feats["potential_mobility"] = int(
+                rust_kernel.potential_mobility(board.B, board.W, board.stm)
+            )
     except Exception:
         # Leave cached value
         pass

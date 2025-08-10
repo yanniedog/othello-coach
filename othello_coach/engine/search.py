@@ -69,6 +69,9 @@ class Searcher:
         return SearchResult(best_move, best_score, len(pv), self.nodes, elapsed_ms, pv)
 
     def _negamax(self, board: Board, depth: int, alpha: int, beta: int, start, limits: SearchLimits, ply: int) -> Tuple[int, List[int]]:
+        # Prevent infinite recursion
+        if ply > 100:  # Maximum recursion depth
+            return evaluate(board), []
         now_ms = (time.perf_counter() - start) * 1000
         if self.nodes >= limits.node_cap or now_ms > limits.time_ms:
             return evaluate(board), []
