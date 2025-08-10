@@ -15,7 +15,6 @@ sys.path.insert(0, str(project_root))
 def create_test_database(db_path: str) -> None:
     """Create a test database with sample games"""
     from othello_coach.db.schema_sql_loader import get_schema_sql
-    from othello_coach.engine.notation import format_moves_with_passes
     
     # Create database and schema
     conn = sqlite3.connect(db_path)
@@ -91,7 +90,6 @@ def test_db_manager_coordinate_transcripts():
     """Test that DB manager shows coordinate transcripts for games"""
     try:
         from PyQt6.QtWidgets import QApplication, QTableWidgetItem
-        from PyQt6.QtCore import QTimer
         from othello_coach.ui.main_window import MainWindow
         
         # Create temporary database
@@ -117,87 +115,73 @@ def test_db_manager_coordinate_transcripts():
                 # Test database manager creation
                 print("Testing database manager creation...")
                 
-                # Create a flag to track when the dialog is ready
-                dialog_ready = False
-                dialog_ref = None
-                
-                def check_dialog():
-                    nonlocal dialog_ready, dialog_ref
-                    if dialog_ref and not dialog_ready:
-                        # Wait a bit for the dialog to fully load
-                        QTimer.singleShot(500, lambda: check_dialog_content(dialog_ref))
-                        dialog_ready = True
-                
-                def check_dialog_content(dialog):
-                    try:
-                        # Find the games table
-                        games_table = None
-                        for child in dialog.findChildren(QTableWidgetItem):
-                            if hasattr(child, 'tableWidget'):
-                                table = child.tableWidget()
-                                if table and table.columnCount() == 7:  # Should have 7 columns now
-                                    games_table = table
-                                    break
-                        
-                        if not games_table:
-                            print("❌ Could not find games table in dialog")
-                            return
-                        
-                        # Check that we have the moves column
-                        header_item = games_table.horizontalHeaderItem(6)
-                        if not header_item or header_item.text() != "Moves":
-                            print("❌ Moves column header not found or incorrect")
-                            return
-                        
-                        # Check that we have sample games
-                        if games_table.rowCount() < 3:
-                            print("❌ Expected at least 3 games, found:", games_table.rowCount())
-                            return
-                        
-                        # Check that moves are displayed in coordinate notation
-                        moves_found = False
-                        for row in range(min(3, games_table.rowCount())):
-                            moves_item = games_table.item(row, 6)
-                            if moves_item and moves_item.text():
-                                moves_text = moves_item.text()
-                                # Should contain coordinate notation like "e6 f4 c3"
-                                if any(len(move) == 2 and move[0].isalpha() and move[1].isdigit() for move in moves_text.split()):
-                                    moves_found = True
-                                    print(f"✅ Found coordinate moves in row {row}: {moves_text}")
-                                    break
-                        
-                        if not moves_found:
-                            print("❌ No coordinate notation moves found in games table")
-                            return
-                        
-                        print("✅ Database manager shows coordinate transcripts correctly!")
-                        dialog.accept()
-                        
-                    except Exception as e:
-                        print(f"❌ Error checking dialog content: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        if dialog:
-                            dialog.accept()
-                
                 # Show the dialog
                 window._show_db_manager()
                 
                 # Find the dialog that was created
+                dialog = None
                 for widget in app.topLevelWidgets():
                     if hasattr(widget, 'windowTitle') and widget.windowTitle() == "Database Manager":
-                        dialog_ref = widget
+                        dialog = widget
                         break
                 
-                if dialog_ref:
-                    # Set up timer to check the dialog content
-                    QTimer.singleShot(100, check_dialog)
-                    
-                    # Run the dialog
-                    dialog_ref.exec()
-                else:
+                if not dialog:
                     print("❌ Database manager dialog not found")
                     return False
+                
+                print("✅ Database manager dialog created successfully")
+                
+                # Find the games table
+                games_table = None
+                for child in dialog.findChildren(QTableWidgetItem):
+                    if hasattr(child, 'tableWidget'):
+                        table = child.tableWidget()
+                        if table and table.columnCount() == 7:  # Should have 7 columns now
+                            games_table = table
+                            break
+                
+                if not games_table:
+                    print("❌ Could not find games table in dialog")
+                    return False
+                
+                print("✅ Found games table with 7 columns")
+                
+                # Check that we have the moves column
+                header_item = games_table.horizontalHeaderItem(6)
+                if not header_item or header_item.text() != "Moves":
+                    print("❌ Moves column header not found or incorrect")
+                    return False
+                
+                print("✅ Moves column header found")
+                
+                # Check that we have sample games
+                if games_table.rowCount() < 3:
+                    print("❌ Expected at least 3 games, found:", games_table.rowCount())
+                    return False
+                
+                print(f"✅ Found {games_table.rowCount()} games in table")
+                
+                # Check that moves are displayed in coordinate notation
+                moves_found = False
+                for row in range(min(3, games_table.rowCount())):
+                    moves_item = games_table.item(row, 6)
+                    if moves_item and moves_item.text():
+                        moves_text = moves_item.text()
+                        # Should contain coordinate notation like "e6 f4 c3"
+                        if any(len(move) == 2 and move[0].isalpha() and move[1].isdigit() for move in moves_text.split()):
+                            moves_found = True
+                            print(f"✅ Found coordinate moves in row {row}: {moves_text}")
+                            break
+                
+                if not moves_found:
+                    print("❌ No coordinate notation moves found in games table")
+                    return False
+                
+                print("✅ Database manager shows coordinate transcripts correctly!")
+                
+                # Close the dialog
+                dialog.accept()
+                return True
                 
             finally:
                 # Restore original DB_PATH
@@ -215,8 +199,6 @@ def test_db_manager_coordinate_transcripts():
         import traceback
         traceback.print_exc()
         return False
-    
-    return True
 
 def test_notation_functions():
     """Test coordinate notation functions work correctly"""
