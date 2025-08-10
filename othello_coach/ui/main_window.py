@@ -782,18 +782,26 @@ class MainWindow(BaseWindow):
                 
                 def run(self):
                     try:
-                        self.progress_update.emit("Starting gauntlet runner...", 10)
+                        self.progress_update.emit("Starting gauntlet runner...", 0)
                         runner = GauntletRunner(str(self.db_path))
                         
-                        self.progress_update.emit("Running matches...", 30)
+                        # Progress callback for detailed updates
+                        def progress_callback(message, percentage):
+                            if percentage >= 0:
+                                self.progress_update.emit(message, percentage)
+                            else:
+                                self.progress_update.emit(f"Error: {message}", -1)
+                        
+                        self.progress_update.emit("Running matches...", 5)
                         matches = runner.run_round_robin(
                             profiles=self.profiles,
                             games_per_pair=self.games,
                             workers=self.workers,
-                            root_noise=self.noise
+                            root_noise=self.noise,
+                            progress_callback=progress_callback
                         )
                         
-                        self.progress_update.emit("Finalizing results...", 90)
+                        self.progress_update.emit("Finalizing results...", 95)
                         self.finished_signal.emit(matches)
                         
                     except Exception as e:

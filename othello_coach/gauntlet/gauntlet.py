@@ -7,9 +7,9 @@ import random
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .glicko import GlickoRating, GlickoCalculator
-from ..engine.search import search_position
+from ..engine.search import search_position, SearchLimits
 from ..engine.board import Board, make_move
-from ..engine.strength import get_strength_profile
+from ..engine.strength import get_strength_profile, StrengthProfile
 from ..engine.notation import moves_to_string, format_moves_with_passes
 
 
@@ -88,7 +88,8 @@ class GauntletRunner:
             raw_conn.close()
     
     def run_round_robin(self, profiles: List[str], games_per_pair: int = 1000, 
-                       workers: int = 4, root_noise: bool = True) -> List[GauntletMatch]:
+                       workers: int = 4, root_noise: bool = True, 
+                       progress_callback=None) -> List[GauntletMatch]:
         """Run round-robin gauntlet between profiles"""
         matches = []
         
@@ -112,8 +113,13 @@ class GauntletRunner:
         import logging
         logging.getLogger(__name__).info("Running %s gauntlet matches with %s workers...", len(matches), workers)
         
+        if progress_callback:
+            progress_callback(f"Starting gauntlet with {len(matches)} matches...", 0)
+        
         # Run matches in parallel
         completed_matches = []
+        total_matches = len(matches)
+        
         with ThreadPoolExecutor(max_workers=workers) as executor:
             future_to_match = {
                 executor.submit(self._play_match, match, root_noise): match 
@@ -126,16 +132,41 @@ class GauntletRunner:
                     completed_match = future.result()
                     completed_matches.append(completed_match)
                     
-                    if len(completed_matches) % 100 == 0:
+                    # More frequent progress updates
+                    progress_pct = (len(completed_matches) / total_matches) * 100
+                    
+                    # Update every 10 matches for CLI, every match for GUI
+                    if len(completed_matches) % 10 == 0 or progress_callback:
                         import logging
-                        logging.getLogger(__name__).info("Completed %s/%s matches", len(completed_matches), len(matches))
+                        logging.getLogger(__name__).info("Completed %s/%s matches (%.1f%%)", 
+                                                       len(completed_matches), total_matches, progress_pct)
+                        
+                        if progress_callback:
+                            # Provide detailed progress info
+                            current_match = completed_matches[-1]
+                            result_str = "W" if current_match.result == 1.0 else "B" if current_match.result == 0.0 else "D"
+                            progress_callback(
+                                f"Match {len(completed_matches)}/{total_matches}: "
+                                f"{current_match.white_profile} vs {current_match.black_profile} = {result_str} "
+                                f"({current_match.game_length} moves)",
+                                progress_pct
+                            )
                         
                 except Exception as e:
                     import logging
                     logging.getLogger(__name__).exception("Match failed: %s", e)
+                    
+                    if progress_callback:
+                        progress_callback(f"Match failed: {e}", -1)
+        
+        if progress_callback:
+            progress_callback("Updating ratings...", 95)
         
         # Update ratings
         self._update_ratings(completed_matches)
+        
+        if progress_callback:
+            progress_callback("Gauntlet complete!", 100)
         
         return completed_matches
     
@@ -186,7 +217,7 @@ class GauntletRunner:
             
             # Make the move
             try:
-                board = make_move(board, move)
+                board, _ = make_move(board, move)
                 moves.append(move)
             except:
                 break  # Invalid move
@@ -214,21 +245,21 @@ class GauntletRunner:
         
         return match
     
-    def _get_engine_move(self, board: Board, strength: Dict, apply_noise: bool = False) -> Optional[int]:
+    def _get_engine_move(self, board: Board, strength: StrengthProfile, apply_noise: bool = False) -> Optional[int]:
         """Get move from engine with given strength"""
         try:
             # Search with strength parameters
-            result = search_position(
-                board,
-                depth=strength['depth'],
-                time_ms=strength['time_ms']
+            limits = SearchLimits(
+                max_depth=strength.depth,
+                time_ms=strength.soft_time_ms
             )
+            result = search_position(board, limits)
             
             if not result or not result.pv:
                 return None
             
             # Apply strength-based move selection
-            if strength.get('noise_temp', 0) > 0 or apply_noise:
+            if strength.noise_temp > 0 or apply_noise:
                 return self._apply_strength_selection(board, result, strength, apply_noise)
             else:
                 return result.pv[0]
@@ -236,7 +267,7 @@ class GauntletRunner:
         except Exception:
             return None
     
-    def _apply_strength_selection(self, board: Board, result, strength: Dict, apply_noise: bool) -> int:
+    def _apply_strength_selection(self, board: Board, result, strength: StrengthProfile, apply_noise: bool) -> int:
         """Apply strength-based move selection with noise"""
         # Get legal moves and their scores
         from ..engine.movegen_fast import generate_legal_mask
@@ -254,7 +285,7 @@ class GauntletRunner:
         best_move = result.pv[0] if result.pv else legal_moves[0]
         
         # Apply blunder probability
-        blunder_prob = strength.get('blunder_prob', 0)
+        blunder_prob = strength.blunder_prob
         if random.random() < blunder_prob:
             # Pick a suboptimal move
             other_moves = [m for m in legal_moves if m != best_move]
@@ -262,7 +293,7 @@ class GauntletRunner:
                 return random.choice(other_moves)
         
         # Apply top-k selection
-        top_k = strength.get('top_k', 1)
+        top_k = strength.top_k
         if top_k > 1 and len(legal_moves) > 1:
             # For simplicity, randomly pick from top-k legal moves
             available_moves = legal_moves[:min(top_k, len(legal_moves))]
@@ -275,12 +306,12 @@ class GauntletRunner:
         # Group matches by player
         player_results = {}
         
+        # Batch save all games at once instead of one by one
+        self._batch_save_games(matches)
+        
         for match in matches:
             if match.result is None:
                 continue
-            
-            # Save individual game to database
-            self._save_game(match)
             
             # White player results
             if match.white_profile not in player_results:
@@ -313,6 +344,49 @@ class GauntletRunner:
         # Save to database
         self._save_ladder()
     
+    def _batch_save_games(self, matches: List[GauntletMatch]):
+        """Batch save all games to database efficiently"""
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.orm import sessionmaker
+        
+        if not matches:
+            return
+            
+        engine = create_engine(f"sqlite:///{self.db_path}")
+        Session = sessionmaker(bind=engine)
+        
+        with Session() as session:
+            # Prepare batch insert
+            games_data = []
+            for match in matches:
+                if match.result is None:
+                    continue
+                    
+                # Convert moves list to coordinate notation string with passes
+                moves_str = format_moves_with_passes(match.moves, getattr(match, 'passes', []))
+                
+                # Create tags for the game
+                tags = f"gauntlet,{match.white_profile}_vs_{match.black_profile}"
+                
+                games_data.append({
+                    'start_hash': "0000000810000000_0000001008000000_0_0",  # Standard starting position
+                    'result': match.result,
+                    'length': match.game_length,
+                    'tags': tags,
+                    'moves': moves_str,
+                    'started_at': match.started_at,
+                    'finished_at': match.finished_at
+                })
+            
+            if games_data:
+                # Batch insert all games
+                query = text("""
+                    INSERT INTO games(start_hash, result, length, tags, moves, started_at, finished_at)
+                    VALUES (:start_hash, :result, :length, :tags, :moves, :started_at, :finished_at)
+                """)
+                session.execute(query, games_data)
+                session.commit()
+    
     def _save_ladder(self):
         """Save updated ladder to database"""
         from sqlalchemy import create_engine, text
@@ -338,48 +412,7 @@ class GauntletRunner:
                 })
             session.commit()
     
-    def _save_game(self, match: GauntletMatch):
-        """Save individual game to database"""
-        from sqlalchemy import create_engine, text
-        from sqlalchemy.orm import sessionmaker
-        import logging
-        
-        try:
-            engine = create_engine(f"sqlite:///{self.db_path}")
-            Session = sessionmaker(bind=engine)
-            
-            with Session() as session:
-                # Convert moves list to coordinate notation string with passes
-                moves_str = format_moves_with_passes(match.moves, getattr(match, 'passes', []))
-                
-                # Create tags for the game
-                tags = f"gauntlet,{match.white_profile}_vs_{match.black_profile}"
-                
-                # Insert game record
-                query = text("""
-                    INSERT INTO games(start_hash, result, length, tags, moves, started_at, finished_at)
-                    VALUES (:start_hash, :result, :length, :tags, :moves, :started_at, :finished_at)
-                """)
-                session.execute(query, {
-                    'start_hash': "0000000810000000_0000001008000000_0_0",  # Standard starting position
-                    'result': match.result,
-                    'length': match.game_length,
-                    'tags': tags,
-                    'moves': moves_str,
-                    'started_at': match.started_at,
-                    'finished_at': match.finished_at
-                })
-                session.commit()
-                
-                logging.getLogger(__name__).info(
-                    "Saved game: %s vs %s, result=%.1f, length=%d, moves=%s",
-                    match.white_profile, match.black_profile, match.result, match.game_length, moves_str
-                )
-        except Exception as e:
-            logging.getLogger(__name__).error(
-                "Failed to save game: %s vs %s: %s",
-                match.white_profile, match.black_profile, e
-            )
+
     
     def get_ladder_standings(self) -> List[Tuple[str, GlickoRating]]:
         """Get current ladder standings"""

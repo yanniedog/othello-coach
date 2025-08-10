@@ -54,7 +54,7 @@ def main() -> None:
             moves = [int(m.strip()) for m in args.root_moves.split(',')]
             for move in moves:
                 from othello_coach.engine.board import make_move
-                root = make_move(root, move)
+                root, _ = make_move(root, move)
             if args.verbose:
                 logging.getLogger(__name__).info("Applied moves: %s", moves)
         else:

@@ -10,3 +10,4 @@ othello-coach.log
 logs/
 *.log
 LOGFILE_FIXES_SUMMARY.md
+DATABASE_DIAGNOSTICS_README.md

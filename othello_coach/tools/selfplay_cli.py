@@ -106,11 +106,20 @@ def main():
         
         # Run gauntlet
         runner = GauntletRunner(args.db_path)
+        
+        # Progress callback for CLI
+        def progress_callback(message, percentage):
+            if percentage >= 0:
+                logging.getLogger(__name__).info("Progress: %s (%.1f%%)", message, percentage)
+            else:
+                logging.getLogger(__name__).warning("Progress: %s", message)
+        
         matches = runner.run_round_robin(
             profiles=args.profiles,
             games_per_pair=args.games,
             workers=args.workers,
-            root_noise=root_noise
+            root_noise=root_noise,
+            progress_callback=progress_callback
         )
         
         logging.getLogger(__name__).info("Completed %s matches", len(matches))

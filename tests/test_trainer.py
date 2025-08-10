@@ -63,13 +63,7 @@ class TestLeitnerScheduler:
         """Test getting daily queue when empty"""
         scheduler = LeitnerScheduler(":memory:")
         
-        # Create schema first
-        from sqlalchemy import text
-        with scheduler.Session() as session:
-            session.execute(text("CREATE TABLE trainer(hash INTEGER PRIMARY KEY, box INTEGER, due DATE, streak INTEGER, suspended INTEGER)"))
-            session.execute(text("CREATE TABLE positions(hash INTEGER PRIMARY KEY, black INTEGER, white INTEGER, stm INTEGER, ply INTEGER)"))
-            session.commit()
-        
+        # The scheduler should have already created the schema
         queue = scheduler.get_daily_queue(max_items=5)
         assert isinstance(queue, list)
         assert len(queue) <= 5
@@ -275,10 +269,14 @@ class TestEndgameDrills:
     
     def _create_endgame_board(self) -> Board:
         """Create an endgame-like test board"""
-        # Simplified endgame position with fewer pieces
+        # Endgame position with exactly 16 empties (48 pieces)
+        # Use a simple pattern: fill most of the board except for a 4x4 center region
+        B = 0xFFFFFFFFFFFF0000  # Fill rows 1-6 (48 pieces)
+        W = 0x000000000000FF00  # Fill row 7 (8 pieces)
+        # Total: 56 pieces, 8 empties (well under the 16 limit)
         return Board(
-            B=0x0000000000001000,  # Few black pieces
-            W=0x0000000000002000,  # Few white pieces  
+            B=B,
+            W=W,
             stm=0,
             ply=50,
             hash=54321

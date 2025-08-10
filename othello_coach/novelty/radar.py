@@ -63,7 +63,7 @@ class NoveltyRadar:
         
         for move in moves:
             try:
-                current_board = make_move(current_board, move)
+                current_board, _ = make_move(current_board, move)
                 boards.append(current_board)
             except:
                 break  # Invalid move sequence
