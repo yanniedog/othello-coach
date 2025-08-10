@@ -10,6 +10,7 @@ from .glicko import GlickoRating, GlickoCalculator
 from ..engine.search import search_position
 from ..engine.board import Board, make_move
 from ..engine.strength import get_strength_profile
+from ..engine.notation import moves_to_string, format_moves_with_passes
 
 
 @dataclass
@@ -21,6 +22,7 @@ class GauntletMatch:
     black_rating: GlickoRating
     result: Optional[float] = None  # 1.0 = white win, 0.5 = draw, 0.0 = black win
     moves: List[int] = None
+    passes: List[int] = None # Track pass moves
     game_length: int = 0
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
@@ -152,6 +154,7 @@ class GauntletRunner:
         # Play the game
         board = Board(B=0x0000000810000000, W=0x0000001008000000, stm=0, ply=0, hash=0)
         moves = []
+        passes = []  # Track pass moves
         
         while True:
             # Check for game end
@@ -164,7 +167,8 @@ class GauntletRunner:
                 if opposite_legal == 0:
                     break  # Game over
                 else:
-                    # Pass
+                    # Pass - record this as a pass move
+                    passes.append(len(moves))
                     board = Board(board.B, board.W, 1 - board.stm, board.ply + 1, board.hash)
                     continue
             
@@ -204,7 +208,8 @@ class GauntletRunner:
         
         match.result = result
         match.moves = moves
-        match.game_length = len(moves)
+        match.passes = passes  # Store pass information
+        match.game_length = len(moves) + len(passes)
         match.finished_at = datetime.now()
         
         return match
@@ -274,6 +279,9 @@ class GauntletRunner:
             if match.result is None:
                 continue
             
+            # Save individual game to database
+            self._save_game(match)
+            
             # White player results
             if match.white_profile not in player_results:
                 player_results[match.white_profile] = {'opponents': [], 'results': []}
@@ -329,6 +337,49 @@ class GauntletRunner:
                     'timestamp': rating.last_updated
                 })
             session.commit()
+    
+    def _save_game(self, match: GauntletMatch):
+        """Save individual game to database"""
+        from sqlalchemy import create_engine, text
+        from sqlalchemy.orm import sessionmaker
+        import logging
+        
+        try:
+            engine = create_engine(f"sqlite:///{self.db_path}")
+            Session = sessionmaker(bind=engine)
+            
+            with Session() as session:
+                # Convert moves list to coordinate notation string with passes
+                moves_str = format_moves_with_passes(match.moves, getattr(match, 'passes', []))
+                
+                # Create tags for the game
+                tags = f"gauntlet,{match.white_profile}_vs_{match.black_profile}"
+                
+                # Insert game record
+                query = text("""
+                    INSERT INTO games(start_hash, result, length, tags, moves, started_at, finished_at)
+                    VALUES (:start_hash, :result, :length, :tags, :moves, :started_at, :finished_at)
+                """)
+                session.execute(query, {
+                    'start_hash': "0000000810000000_0000001008000000_0_0",  # Standard starting position
+                    'result': match.result,
+                    'length': match.game_length,
+                    'tags': tags,
+                    'moves': moves_str,
+                    'started_at': match.started_at,
+                    'finished_at': match.finished_at
+                })
+                session.commit()
+                
+                logging.getLogger(__name__).info(
+                    "Saved game: %s vs %s, result=%.1f, length=%d, moves=%s",
+                    match.white_profile, match.black_profile, match.result, match.game_length, moves_str
+                )
+        except Exception as e:
+            logging.getLogger(__name__).error(
+                "Failed to save game: %s vs %s: %s",
+                match.white_profile, match.black_profile, e
+            )
     
     def get_ladder_standings(self) -> List[Tuple[str, GlickoRating]]:
         """Get current ladder standings"""

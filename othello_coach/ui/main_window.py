@@ -1160,27 +1160,64 @@ class MainWindow(BaseWindow):
         """Show database stats and maintenance actions."""
         if _OFFSCREEN:
             return
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QTabWidget, QWidget, QTableWidget, QTableWidgetItem, QHeaderView
         from ..tools.diag import DB_PATH
         import sqlite3
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Database Manager")
+        dlg.resize(800, 600)
         lay = QVBoxLayout(dlg)
+        
+        # Create tab widget
+        tab_widget = QTabWidget()
+        lay.addWidget(tab_widget)
+        
+        # Stats tab
+        stats_tab = QWidget()
+        stats_layout = QVBoxLayout(stats_tab)
         stats_lbl = QLabel("Loading...")
-        lay.addWidget(stats_lbl)
+        stats_layout.addWidget(stats_lbl)
         btns = QHBoxLayout()
         vacuum_btn = QPushButton("VACUUM")
         checkpoint_btn = QPushButton("Checkpoint WAL")
-        btns.addWidget(vacuum_btn); btns.addWidget(checkpoint_btn); btns.addStretch()
-        lay.addLayout(btns)
+        refresh_btn = QPushButton("Refresh")
+        btns.addWidget(vacuum_btn)
+        btns.addWidget(checkpoint_btn)
+        btns.addWidget(refresh_btn)
+        btns.addStretch()
+        stats_layout.addLayout(btns)
+        
+        # Ladder standings tab
+        ladder_tab = QWidget()
+        ladder_layout = QVBoxLayout(ladder_tab)
+        ladder_table = QTableWidget()
+        ladder_table.setColumnCount(4)
+        ladder_table.setHorizontalHeaderLabels(["Profile", "Rating", "RD", "Last Updated"])
+        ladder_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        ladder_layout.addWidget(ladder_table)
+        
+        # Games tab
+        games_tab = QWidget()
+        games_layout = QVBoxLayout(games_tab)
+        games_table = QTableWidget()
+        games_table.setColumnCount(6)
+        games_table.setHorizontalHeaderLabels(["ID", "Result", "Length", "Tags", "Started", "Finished"])
+        games_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        games_layout.addWidget(games_table)
+        
+        # Add tabs
+        tab_widget.addTab(stats_tab, "Database Stats")
+        tab_widget.addTab(ladder_tab, "Ladder Standings")
+        tab_widget.addTab(games_tab, "Recent Games")
 
         def refresh():
             try:
                 conn = sqlite3.connect(str(DB_PATH))
                 cur = conn.cursor()
                 counts = {}
-                for table in ("positions", "analyses", "moves", "notes", "games"):
+                # Include all tables from the schema
+                for table in ("positions", "analyses", "moves", "notes", "games", "features", "trainer", "ladders", "mappings", "gdl_programs"):
                     try:
                         cur.execute(f"SELECT COUNT(1) FROM {table}")
                         counts[table] = cur.fetchone()[0]
@@ -1191,6 +1228,59 @@ class MainWindow(BaseWindow):
             except Exception as e:
                 stats_lbl.setText(f"Error: {e}")
 
+        def refresh_ladder():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                cur = conn.cursor()
+                
+                # Get ladder standings
+                cur.execute("""
+                    SELECT profile, rating, RD, last_rated_at 
+                    FROM ladders 
+                    ORDER BY rating DESC
+                """)
+                results = cur.fetchall()
+                
+                ladder_table.setRowCount(len(results))
+                for i, (profile, rating, rd, last_updated) in enumerate(results):
+                    ladder_table.setItem(i, 0, QTableWidgetItem(str(profile)))
+                    ladder_table.setItem(i, 1, QTableWidgetItem(f"{rating:.0f}"))
+                    ladder_table.setItem(i, 2, QTableWidgetItem(f"{rd:.0f}"))
+                    ladder_table.setItem(i, 3, QTableWidgetItem(str(last_updated) if last_updated else "N/A"))
+                
+                conn.close()
+            except Exception as e:
+                ladder_table.setRowCount(1)
+                ladder_table.setItem(0, 0, QTableWidgetItem(f"Error loading ladder: {e}"))
+
+        def refresh_games():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                cur = conn.cursor()
+                
+                # Get recent games
+                cur.execute("""
+                    SELECT id, result, length, tags, started_at, finished_at 
+                    FROM games 
+                    ORDER BY started_at DESC 
+                    LIMIT 50
+                """)
+                results = cur.fetchall()
+                
+                games_table.setRowCount(len(results))
+                for i, (id, result, length, tags, started, finished) in enumerate(results):
+                    games_table.setItem(i, 0, QTableWidgetItem(str(id)))
+                    games_table.setItem(i, 1, QTableWidgetItem(str(result)))
+                    games_table.setItem(i, 2, QTableWidgetItem(str(length)))
+                    games_table.setItem(i, 3, QTableWidgetItem(str(tags)))
+                    games_table.setItem(i, 4, QTableWidgetItem(str(started)))
+                    games_table.setItem(i, 5, QTableWidgetItem(str(finished) if finished else "N/A"))
+                
+                conn.close()
+            except Exception as e:
+                games_table.setRowCount(1)
+                games_table.setItem(0, 0, QTableWidgetItem(f"Error loading games: {e}"))
+
         def vacuum():
             try:
                 conn = sqlite3.connect(str(DB_PATH))
@@ -1198,6 +1288,8 @@ class MainWindow(BaseWindow):
                     conn.execute("VACUUM;")
                 conn.close()
                 refresh()
+                refresh_ladder()
+                refresh_games()
             except Exception as e:
                 stats_lbl.setText(f"VACUUM failed: {e}")
 
@@ -1208,12 +1300,20 @@ class MainWindow(BaseWindow):
                     conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
                 conn.close()
                 refresh()
+                refresh_ladder()
+                refresh_games()
             except Exception as e:
                 stats_lbl.setText(f"Checkpoint failed: {e}")
 
         vacuum_btn.clicked.connect(vacuum)
         checkpoint_btn.clicked.connect(checkpoint)
+        refresh_btn.clicked.connect(lambda: [refresh(), refresh_ladder(), refresh_games()])
+        
+        # Initial load
         refresh()
+        refresh_ladder()
+        refresh_games()
+        
         dlg.exec()
 
     def _create_theme_menu(self, menu) -> None:
