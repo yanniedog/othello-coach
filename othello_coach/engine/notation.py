@@ -113,7 +113,15 @@ def get_notation_description(notation: str) -> str:
         return "invalid"
 
 def format_moves_with_passes(moves: list[int], passes: list[int]) -> str:
-    """Convert moves and pass information to coordinate notation string with passes."""
+    """Convert moves and pass information to coordinate notation string with passes.
+    
+    Args:
+        moves: List of move coordinates
+        passes: List of move indices after which passes occur (0-based)
+    
+    Returns:
+        String with moves and passes interleaved
+    """
     if not moves and not passes:
         return ""
     
@@ -121,13 +129,19 @@ def format_moves_with_passes(moves: list[int], passes: list[int]) -> str:
     move_idx = 0
     pass_idx = 0
     
-    # Interleave moves and passes based on their positions
-    for i in range(len(moves) + len(passes)):
-        if pass_idx < len(passes) and (move_idx >= len(moves) or passes[pass_idx] <= i):
+    # Process each move and check if a pass should follow
+    for i, move in enumerate(moves):
+        # Add the move
+        result += coord_to_notation(move)
+        
+        # Check if a pass should follow this move
+        if pass_idx < len(passes) and passes[pass_idx] == i:
             result += PASS_NOTATION
             pass_idx += 1
-        elif move_idx < len(moves):
-            result += coord_to_notation(moves[move_idx])
-            move_idx += 1
+    
+    # Handle case where there are only passes (no moves)
+    if not moves and passes:
+        for _ in passes:
+            result += PASS_NOTATION
     
     return result
