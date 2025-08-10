@@ -12,6 +12,7 @@ from othello_coach.ui.advantage_graph import AdvantageGraphWidget
 from othello_coach.engine.board import Board, start_board, make_move
 
 class TestWindow(QMainWindow):
+    __test__ = False
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Advantage Graph Fix Test")

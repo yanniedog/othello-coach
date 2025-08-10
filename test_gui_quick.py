@@ -81,37 +81,38 @@ def test_basic_functionality():
     """Test basic functionality without GUI"""
     print("\n🧪 Testing basic functionality...")
     
-    try:
-        from othello_coach.engine.board import start_board, legal_moves_mask
-        board = start_board()
-        print("✅ Board creation successful")
-        
-        legal_moves = legal_moves_mask(board)
-        move_count = bin(legal_moves).count('1')
-        print(f"✅ Legal moves: {move_count} moves available")
-        
-        if move_count > 0:
-            # Test a move
-            from othello_coach.engine.board import make_move
-            # Find first legal move
-            for i in range(64):
-                if legal_moves & (1 << i):
-                    move = i
-                    break
-            
-            new_board, frame = make_move(board, move)
-            print(f"✅ Move {move} executed successfully")
-            
-            # Test undo
-            from othello_coach.engine.board import undo_move
-            restored_board = undo_move(new_board, frame)
-            print("✅ Move undo successful")
-        
-    except Exception as e:
-        print(f"❌ Basic functionality test failed: {e}")
-        return False
+    from othello_coach.engine.board import start_board, legal_moves_mask
+    board = start_board()
+    print("✅ Board creation successful")
     
-    return True
+    legal_moves = legal_moves_mask(board)
+    # Backwards compat shim: accept either function shape
+    if isinstance(legal_moves, int):
+        move_count = bin(legal_moves).count('1')
+    else:
+        # If legal_moves_mask is a function (new signature), call it
+        legal_moves = legal_moves_mask(board.B, board.W, board.stm)
+        move_count = bin(legal_moves).count('1')
+    print(f"✅ Legal moves: {move_count} moves available")
+    
+    if move_count > 0:
+        # Test a move
+        from othello_coach.engine.board import make_move
+        # Find first legal move
+        for i in range(64):
+            if legal_moves & (1 << i):
+                move = i
+                break
+        
+        new_board, frame = make_move(board, move)
+        print(f"✅ Move {move} executed successfully")
+        
+        # Test undo
+        from othello_coach.engine.board import undo_move
+        restored_board = undo_move(new_board, frame)
+        print("✅ Move undo successful")
+    
+    assert True
 
 def test_config_loading():
     """Test configuration loading"""

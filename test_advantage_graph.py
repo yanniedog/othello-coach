@@ -63,7 +63,7 @@ class TestWindow(QMainWindow):
         
     def make_random_move(self):
         """Make a random legal move"""
-        legal = legal_moves_mask(self.board)
+        legal = legal_moves_mask(self.board.B, self.board.W, self.board.stm)
         if legal == 0:
             print("No legal moves available")
             return

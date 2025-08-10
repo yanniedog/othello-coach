@@ -19,9 +19,6 @@ fn stable_count(mask_color: u64, _mask_other: u64) -> u32 {
             continue; // No piece at this corner
         }
         
-        // The corner itself is stable
-        stable += 1;
-        
         // Extend along two edges from the corner
         let directions = match corner {
             0 => [1, 8],      // A1: East, North
@@ -59,18 +56,7 @@ fn stable_count(mask_color: u64, _mask_other: u64) -> u32 {
         }
     }
     
-    // Deduplicate corners that are part of two edges
-    let mut stable_corners = 0;
-    for &c in &corners {
-        if (mask_color & (1u64 << c)) != 0 {
-            stable_corners +=1;
-        }
-    }
-    if stable > stable_corners {
-        stable - stable_corners
-    } else {
-        stable
-    }
+    stable
 }
 
 /// Calculate parity regions (empty regions and their controllers)

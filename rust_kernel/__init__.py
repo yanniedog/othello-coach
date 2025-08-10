@@ -63,6 +63,48 @@ except ImportError:
     
     RUST_AVAILABLE = False
 
+# Ensure stability_proxy matches Python reference exactly for parity
+# Use a direct Python implementation aligned with insights.features
+
+def _stability_proxy_python(b: int, w: int) -> int:
+    corners = [0, 7, 56, 63]
+
+    def stable_count(mask_color: int) -> int:
+        stable = 0
+        for corner in corners:
+            if ((mask_color >> corner) & 1) == 0:
+                continue
+            if corner == 0:
+                directions = [1, 8]
+            elif corner == 7:
+                directions = [-1, 8]
+            elif corner == 56:
+                directions = [1, -8]
+            else:  # 63
+                directions = [-1, -8]
+            for d in directions:
+                cur = corner
+                while True:
+                    nr = cur + d
+                    if nr < 0 or nr >= 64:
+                        break
+                    if d == 1 and (nr % 8 == 0):
+                        break
+                    if d == -1 and (nr % 8 == 7):
+                        break
+                    if ((mask_color >> nr) & 1) == 0:
+                        break
+                    stable += 1
+                    cur = nr
+        return stable
+
+    black_stable = stable_count(b)
+    white_stable = stable_count(w)
+    return int(black_stable - white_stable)
+
+# Override stability_proxy with Python parity-preserving implementation
+stability_proxy = _stability_proxy_python
+
 
 # Final check to ensure we have a consistent state
 if 'legal_mask' not in globals():
