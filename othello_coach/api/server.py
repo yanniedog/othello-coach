@@ -10,6 +10,8 @@ from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from uvicorn import Config, Server
+import logging
+from ..logging_setup import setup_logging
 
 from .auth import TokenAuth, RateLimiter, create_auth_dependency, create_rate_limit_dependency
 from .schemas import *
@@ -25,6 +27,8 @@ class APIServer:
     """Local API server (loopback only)"""
     
     def __init__(self, config: Dict):
+        # Ensure logging configured for API context as well (append, not overwrite)
+        setup_logging(overwrite=False)
         self.config = config
         self.start_time = time.time()
         self.token_auth = TokenAuth(config['api']['token'])
@@ -36,7 +40,7 @@ class APIServer:
         # Store token for client access
         if not config['api']['token']:
             config['api']['token'] = self.token_auth.token
-            print(f"Generated API token: {self.token_auth.token}")
+            logging.getLogger(__name__).info("Generated API token: %s", self.token_auth.token)
         
         self.app = create_app(self)
     
@@ -59,8 +63,8 @@ class APIServer:
         )
         
         server = Server(config)
-        print(f"Starting API server on http://{host}:{port}")
-        print(f"API token: {self.token_auth.token}")
+        logging.getLogger(__name__).info("Starting API server on http://%s:%s", host, port)
+        logging.getLogger(__name__).info("API token: %s", self.token_auth.token)
         
         await server.serve()
     
@@ -75,10 +79,10 @@ def create_app(api_server: APIServer) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Startup
-        print("API server starting up...")
+        logging.getLogger(__name__).info("API server starting up...")
         yield
         # Shutdown
-        print("API server shutting down...")
+        logging.getLogger(__name__).info("API server shutting down...")
     
     app = FastAPI(
         title="Othello Coach API",

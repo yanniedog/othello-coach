@@ -6,6 +6,8 @@ import asyncio
 import signal
 from pathlib import Path
 import tomli
+import logging
+from ..logging_setup import setup_logging
 from ..api.server import APIServer
 
 
@@ -19,16 +21,17 @@ def load_config(config_path: str = None) -> dict:
             config = tomli.load(f)
         return config
     except FileNotFoundError:
-        print(f"Config file not found: {config_path}", file=sys.stderr)
-        print("Run 'othello-coach' first to create default configuration", file=sys.stderr)
+        logging.getLogger(__name__).error("Config file not found: %s", config_path)
+        logging.getLogger(__name__).error("Run 'othello-coach' first to create default configuration")
         sys.exit(1)
     except Exception as e:
-        print(f"Error loading config: {e}", file=sys.stderr)
+        logging.getLogger(__name__).exception("Error loading config: %s", e)
         sys.exit(1)
 
 
 async def main():
     """Main entry point for othello-api"""
+    setup_logging(overwrite=False)
     parser = argparse.ArgumentParser(
         description="Start Othello Coach local API server"
     )
@@ -70,14 +73,13 @@ async def main():
     
     # Check if API is enabled
     if not config.get('feature_flags', {}).get('api', False):
-        print("API is disabled in configuration", file=sys.stderr)
-        print("Set feature_flags.api = true in config.toml to enable", file=sys.stderr)
+        logging.getLogger(__name__).error("API is disabled in configuration")
+        logging.getLogger(__name__).error("Set feature_flags.api = true in config.toml to enable")
         sys.exit(1)
     
     # Override host if not loopback
     if args.host not in ('127.0.0.1', 'localhost', '::1'):
-        print("Warning: API server only supports loopback addresses for security", file=sys.stderr)
-        print("Forcing host to 127.0.0.1", file=sys.stderr)
+        logging.getLogger(__name__).warning("API server only supports loopback addresses for security; forcing host to 127.0.0.1")
         args.host = '127.0.0.1'
     
     # Use configured port if not specified
@@ -90,31 +92,28 @@ async def main():
     if args.generate_token:
         import secrets
         new_token = secrets.token_urlsafe(32)
-        print(f"Generated new API token: {new_token}")
-        print("Add this to your config.toml:")
-        print(f'[api]')
-        print(f'token = "{new_token}"')
+        logging.getLogger(__name__).info("Generated new API token: %s", new_token)
+        logging.getLogger(__name__).info("Add this to your config.toml:")
+        logging.getLogger(__name__).info("[api]\ntoken = \"%s\"", new_token)
         return
     
     try:
         # Create and start server
         server = APIServer(config)
         
-        print(f"Othello Coach API Server v1.1.0")
-        print(f"Configuration: {args.config or 'default'}")
-        print(f"Features enabled:")
-        
+        logging.getLogger(__name__).info("Othello Coach API Server v1.1.0")
+        logging.getLogger(__name__).info("Configuration: %s", args.config or 'default')
+        logging.getLogger(__name__).info("Features enabled:")
         for feature, enabled in config.get('feature_flags', {}).items():
-            status = "✓" if enabled else "✗"
-            print(f"  {status} {feature}")
-        
-        print()
+            status = "enabled" if enabled else "disabled"
+            logging.getLogger(__name__).info("  %s: %s", feature, status)
+        logging.getLogger(__name__).info("")
         
         # Handle shutdown gracefully
         shutdown_event = asyncio.Event()
         
         def signal_handler():
-            print("\nReceived shutdown signal...")
+            logging.getLogger(__name__).info("Received shutdown signal...")
             shutdown_event.set()
         
         # Register signal handlers
@@ -142,12 +141,12 @@ async def main():
             except asyncio.CancelledError:
                 pass
         
-        print("API server stopped")
+        logging.getLogger(__name__).info("API server stopped")
         
     except KeyboardInterrupt:
-        print("\nShutdown requested by user")
+        logging.getLogger(__name__).info("Shutdown requested by user")
     except Exception as e:
-        print(f"Error starting API server: {e}", file=sys.stderr)
+        logging.getLogger(__name__).exception("Error starting API server: %s", e)
         sys.exit(1)
 
 

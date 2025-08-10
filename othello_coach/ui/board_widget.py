@@ -208,7 +208,6 @@ class BoardWidget(QGraphicsView):
             # Log the pass
             player_name = "Black" if (1 - next_stm) == 0 else "White"
             log_event("game.pass", "auto", player=player_name, ply=self.board.ply - 1)
-            print(f"{player_name} passes (no legal moves)")
             
             # Track pass information for UI
             self.last_move_info = f"{player_name} passed"
@@ -433,7 +432,6 @@ class BoardWidget(QGraphicsView):
         
         except Exception as e:
             log_event("game.error", "cpu_move_failed", error=str(e))
-            print(f"CPU move failed: {e}")
             # Attempt to recover by rescheduling
             self._schedule_cpu_move_if_needed()
         finally:

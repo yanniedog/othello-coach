@@ -5,6 +5,7 @@ from PyQt6.QtCore import QUrl
 from importlib import resources
 import os
 import json
+import logging
 
 
 class TreeView(QWidget):
@@ -71,6 +72,7 @@ class TreeView(QWidget):
                 self._web_view.page().runJavaScript(js)  # type: ignore[attr-defined]
             except Exception:
                 # Fallback silently to text
+                logging.getLogger(__name__).exception("WebEngine render failed; falling back to text")
                 self._refresh_tree_display()
         elif self._text_view:
             self._refresh_tree_display()
@@ -117,13 +119,13 @@ class TreeView(QWidget):
         """Rebuild the tree by triggering the main window's action."""
         try:
             if self._main_window and hasattr(self._main_window, 'action_rebuild_tree'):
-                print("Tree view: Triggering tree rebuild...")
+                logging.getLogger(__name__).info("Tree view: Triggering tree rebuild...")
                 self._main_window.action_rebuild_tree.trigger()
             else:
                 # Fallback: try to rebuild tree directly
                 self._rebuild_tree_direct()
         except Exception as e:
-            print(f"Tree rebuild failed: {e}")
+            logging.getLogger(__name__).exception("Tree rebuild failed: %s", e)
             if self._text_view:
                 self._text_view.setPlainText(f"Tree rebuild failed: {e}")
     
@@ -139,12 +141,12 @@ class TreeView(QWidget):
             if self._main_window and hasattr(self._main_window, 'board'):
                 board = self._main_window.board.board
             
-            print("Building tree directly...")
+            logging.getLogger(__name__).info("Building tree directly...")
             tree_data = build_tree(board, "mobility_differential", depth=4, width=6, time_ms=1000)
             self.update_tree_data(tree_data)
-            print(f"Tree rebuilt with {len(tree_data.get('nodes', {}))} nodes")
+            logging.getLogger(__name__).info("Tree rebuilt with %s nodes", len(tree_data.get('nodes', {})))
             
         except Exception as e:
-            print(f"Direct tree rebuild failed: {e}")
+            logging.getLogger(__name__).exception("Direct tree rebuild failed: %s", e)
             if self._text_view:
                 self._text_view.setPlainText(f"Direct tree rebuild failed: {e}")

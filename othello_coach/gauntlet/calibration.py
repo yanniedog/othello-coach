@@ -287,7 +287,8 @@ class CalibrationManager:
                 self._save_mappings()
                 
         except Exception as e:
-            print(f"Win probability calibration failed: {e}")
+            import logging
+            logging.getLogger(__name__).exception("Win probability calibration failed: %s", e)
     
     def get_win_probability(self, score_cp: float) -> Optional[float]:
         """Get win probability for a given centipawn score"""

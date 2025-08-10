@@ -53,6 +53,7 @@ from .tree_view import TreeView
 from .training_dock import TrainingDock
 from .game_controls import GameControlsWidget
 from .actions import register_actions
+from ..logging_setup import attach_window_instrumentation
 
 # Ensure a QApplication instance exists even when the module is imported in headless test contexts
 if QApplication.instance() is None:
@@ -125,6 +126,12 @@ class MainWindow(BaseWindow):
         # Modern toolbar and status bar
         self._create_toolbar()
         self._init_status_bar()
+
+        # Attach per-window instrumentation (actions/menus)
+        try:
+            attach_window_instrumentation(self)
+        except Exception:
+            pass
 
     def _create_menu_bar(self) -> None:
         """Create comprehensive menu bar with all available features."""

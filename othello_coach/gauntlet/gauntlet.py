@@ -107,7 +107,8 @@ class GauntletRunner:
         # Shuffle for better parallelization
         random.shuffle(matches)
         
-        print(f"Running {len(matches)} gauntlet matches with {workers} workers...")
+        import logging
+        logging.getLogger(__name__).info("Running %s gauntlet matches with %s workers...", len(matches), workers)
         
         # Run matches in parallel
         completed_matches = []
@@ -124,10 +125,12 @@ class GauntletRunner:
                     completed_matches.append(completed_match)
                     
                     if len(completed_matches) % 100 == 0:
-                        print(f"Completed {len(completed_matches)}/{len(matches)} matches")
+                        import logging
+                        logging.getLogger(__name__).info("Completed %s/%s matches", len(completed_matches), len(matches))
                         
                 except Exception as e:
-                    print(f"Match failed: {e}")
+                    import logging
+                    logging.getLogger(__name__).exception("Match failed: %s", e)
         
         # Update ratings
         self._update_ratings(completed_matches)
@@ -293,7 +296,11 @@ class GauntletRunner:
             )
             self.ladder[profile] = new_rating
             
-            print(f"{profile}: {old_rating.rating:.0f}±{old_rating.rd:.0f} → {new_rating.rating:.0f}±{new_rating.rd:.0f}")
+            import logging
+            logging.getLogger(__name__).info(
+                "%s: %.0f±%.0f → %.0f±%.0f",
+                profile, old_rating.rating, old_rating.rd, new_rating.rating, new_rating.rd,
+            )
         
         # Save to database
         self._save_ladder()

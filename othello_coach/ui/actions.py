@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QMainWindow
+import logging
 
 
 def register_actions(win: QMainWindow) -> None:
+    log = logging.getLogger("qt.actions")
     # New game
     win.action_new = QAction("New", win)
     win.addAction(win.action_new)
@@ -13,11 +15,9 @@ def register_actions(win: QMainWindow) -> None:
         try:
             if hasattr(win, "board"):
                 win.board.new_game()
-                print("New game started")
+                log.info("action:new_game")
         except Exception as e:
-            print(f"New game failed: {e}")
-            import traceback
-            traceback.print_exc()
+            log.exception("New game failed: %s", e)
     win.action_new.triggered.connect(_new_game)
     # Undo / Redo (placeholders)
     win.action_undo = QAction("Undo", win)
@@ -55,11 +55,9 @@ def register_actions(win: QMainWindow) -> None:
                 # Pass data to tree view
                 if hasattr(win.tree, "update_tree_data"):
                     win.tree.update_tree_data(tree_data)
-                print(f"Tree rebuilt with {len(tree_data.get('nodes', {}))} nodes")
+                log.info("action:rebuild_tree nodes=%s", len(tree_data.get('nodes', {})))
         except Exception as e:
-            print(f"Tree rebuild failed: {e}")
-            import traceback
-            traceback.print_exc()
+            log.exception("Tree rebuild failed: %s", e)
     win.action_rebuild_tree.triggered.connect(_rebuild_tree)
     # Basic Undo/Redo shortcuts (Z/Y)
     win.action_undo.setShortcut("Z")

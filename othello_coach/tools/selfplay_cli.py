@@ -3,12 +3,15 @@
 import argparse
 import sys
 from typing import List
+import logging
 from ..gauntlet.gauntlet import GauntletRunner
 from ..engine.strength import get_available_profiles
+from ..logging_setup import setup_logging
 
 
 def main():
     """Main entry point for othello-selfplay"""
+    setup_logging(overwrite=False)
     parser = argparse.ArgumentParser(
         description="Run self-play gauntlet matches for calibration"
     )
@@ -77,7 +80,7 @@ def main():
         available_profiles = get_available_profiles()
         for profile in args.profiles:
             if profile not in available_profiles and not profile.startswith('depth_'):
-                print(f"Warning: Unknown profile '{profile}'", file=sys.stderr)
+                logging.getLogger(__name__).warning("Unknown profile '%s'", profile)
         
         # Add custom depth profile if specified
         if args.custom_depth:
@@ -89,18 +92,17 @@ def main():
         if args.seed:
             import random
             random.seed(args.seed)
-            print(f"Using random seed: {args.seed}")
+            logging.getLogger(__name__).info("Using random seed: %s", args.seed)
         
         # Determine root noise setting
         root_noise = args.root_noise and not args.no_root_noise
         
-        print(f"Running gauntlet with {len(args.profiles)} profiles:")
+        logging.getLogger(__name__).info("Running gauntlet with %s profiles:", len(args.profiles))
         for profile in args.profiles:
-            print(f"  - {profile}")
-        print(f"Games per pairing: {args.games}")
-        print(f"Workers: {args.workers}")
-        print(f"Root noise: {root_noise}")
-        print()
+            logging.getLogger(__name__).info("  - %s", profile)
+        logging.getLogger(__name__).info("Games per pairing: %s", args.games)
+        logging.getLogger(__name__).info("Workers: %s", args.workers)
+        logging.getLogger(__name__).info("Root noise: %s", root_noise)
         
         # Run gauntlet
         runner = GauntletRunner(args.db_path)
@@ -111,10 +113,10 @@ def main():
             root_noise=root_noise
         )
         
-        print(f"\nCompleted {len(matches)} matches")
+        logging.getLogger(__name__).info("Completed %s matches", len(matches))
         
         # Show results summary
-        print("\nResults summary:")
+        logging.getLogger(__name__).info("Results summary:")
         results = {}
         for match in matches:
             if match.result is not None:
@@ -143,13 +145,13 @@ def main():
             stats = results[profile]
             if stats['games'] > 0:
                 win_rate = stats['wins'] / stats['games']
-                print(f"{profile:12s}: {stats['wins']:3d}W {stats['losses']:3d}L {stats['draws']:3d}D ({win_rate:.1%})")
+                logging.getLogger(__name__).info("%s: %dW %dL %dD (%.1f%%)", profile, stats['wins'], stats['losses'], stats['draws'], win_rate * 100)
         
         # Show updated ladder
-        print("\nUpdated ladder:")
+        logging.getLogger(__name__).info("Updated ladder:")
         standings = runner.get_ladder_standings()
         for i, (profile, rating) in enumerate(standings, 1):
-            print(f"{i:2d}. {profile:12s}: {rating.rating:4.0f} ± {rating.rd:3.0f}")
+            logging.getLogger(__name__).info("%d. %s: %.0f ± %.0f", i, profile, rating.rating, rating.rd)
         
         # Save results if requested
         if args.output:
@@ -188,13 +190,13 @@ def main():
             
             with open(args.output, 'w') as f:
                 json.dump(output_data, f, indent=2)
-            print(f"\nResults saved to {args.output}")
+            logging.getLogger(__name__).info("Results saved to %s", args.output)
         
     except KeyboardInterrupt:
-        print("\nGauntlet interrupted by user", file=sys.stderr)
+        logging.getLogger(__name__).info("Gauntlet interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"Error running gauntlet: {e}", file=sys.stderr)
+        logging.getLogger(__name__).exception("Error running gauntlet: %s", e)
         sys.exit(1)
 
 

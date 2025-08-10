@@ -11,6 +11,7 @@ from .main_window import MainWindow
 from ..tools.diag import install_and_init, CONFIG_PATH, DB_PATH
 from ..db.writer import DBWriter
 from .themes import load_theme
+from ..logging_setup import setup_logging, install_qt_instrumentation, attach_window_instrumentation
 
 
 def _load_config() -> Dict[str, Any]:
@@ -31,6 +32,8 @@ def _load_config() -> Dict[str, Any]:
 
 
 def run_app() -> int:
+    # Ensure logging is configured first
+    setup_logging(overwrite=True)
     # Ensure config and DB exist
     install_and_init()
 
@@ -100,4 +103,10 @@ def run_app() -> int:
 
     win = MainWindow()
     win.show()
+    try:
+        # Install Qt instrumentation after window created
+        install_qt_instrumentation(app)
+        attach_window_instrumentation(win)
+    except Exception:
+        pass
     return app.exec()

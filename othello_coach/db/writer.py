@@ -12,6 +12,8 @@ import orjson
 
 from .schema_sql_loader import get_schema_sql
 from .retention import cap_moves_per_position
+from ..logging_setup import setup_logging
+import logging
 
 
 @dataclass
@@ -62,13 +64,9 @@ class DBWriter(mp.Process):
         payload.update(kwargs)
         try:
             line = orjson.dumps(payload).decode("utf-8")
-            print(line, flush=True)
-            if self.log_path is not None:
-                self.log_path.parent.mkdir(parents=True, exist_ok=True)
-                with self.log_path.open("a", encoding="utf-8") as f:
-                    f.write(line + "\n")
+            logging.getLogger("db.writer").info(line)
         except Exception:
-            pass
+            logging.getLogger("db.writer").exception("failed to log writer event: %s", event)
 
     def _should_checkpoint_by_size(self) -> bool:
         wal_path = self.db_path + "-wal"
@@ -79,6 +77,9 @@ class DBWriter(mp.Process):
         return size > self.wal_checkpoint_mb * 1024 * 1024
 
     def run(self) -> None:
+        # Ensure central logging is configured in child process (append mode)
+        setup_logging(overwrite=False)
+        log = logging.getLogger("db.writer")
         conn = sqlite3.connect(self.db_path)
         # Apply PRAGMAs per spec on connection open
         conn.execute("PRAGMA journal_mode=WAL;")
