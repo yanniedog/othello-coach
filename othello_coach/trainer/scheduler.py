@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import List, Optional, Dict
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+import os
 
 
 @dataclass
@@ -26,6 +27,45 @@ class LeitnerScheduler:
         self.leitner_days = leitner_days or [1, 3, 7, 14, 30]
         self.engine = create_engine(f"sqlite:///{db_path}")
         self.Session = sessionmaker(bind=self.engine)
+        
+        # Ensure database schema exists
+        self._ensure_schema()
+    
+    def _ensure_schema(self):
+        """Ensure database schema exists"""
+        # Import here to avoid circular imports
+        from ..db.migrate import ensure_schema
+        
+        # Create schema if using in-memory database or if file doesn't exist
+        if self.engine.url.database == ':memory:' or not os.path.exists(self.engine.url.database):
+            with self.engine.connect() as conn:
+                ensure_schema(conn.connection)
+                conn.commit()
+        else:
+            # For existing files, try to create schema (CREATE TABLE IF NOT EXISTS)
+            with self.engine.connect() as conn:
+                # Create trainer table if it doesn't exist
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS trainer(
+                        hash TEXT PRIMARY KEY,
+                        box INTEGER NOT NULL DEFAULT 1,
+                        due DATE,
+                        streak INTEGER NOT NULL DEFAULT 0,
+                        suspended INTEGER NOT NULL DEFAULT 0
+                    )
+                """))
+                
+                # Create positions table if it doesn't exist
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS positions(
+                        hash TEXT PRIMARY KEY,
+                        black TEXT NOT NULL,
+                        white TEXT NOT NULL,
+                        stm INTEGER NOT NULL,
+                        ply INTEGER NOT NULL
+                    )
+                """))
+                conn.commit()
     
     def get_daily_queue(self, max_items: int = 30, 
                        new_to_review_ratio: str = "3:7") -> List[TrainerItem]:

@@ -1,4 +1,3 @@
-use crate::bitboards::*;
 use crate::movegen::*;
 use crate::popcount::popcount;
 use std::collections::HashMap;

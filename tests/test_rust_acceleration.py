@@ -248,7 +248,11 @@ class TestRustPerformance:
         print(f"Legal mask performance:")
         print(f"  Python: {python_time:.4f}s ({iterations/python_time:.0f} ops/s)")
         print(f"  Rust:   {rust_time:.4f}s ({iterations/rust_time:.0f} ops/s)")
-        print(f"  Speedup: {python_time/rust_time:.1f}x")
+        
+        if rust_time > 0:
+            print(f"  Speedup: {python_time/rust_time:.1f}x")
+        else:
+            print(f"  Speedup: ∞ (Rust too fast to measure)")
         
         # Rust should be faster, but don't make it a hard requirement
         assert rust_time < python_time * 2, "Rust should be at least competitive with Python"
@@ -291,7 +295,11 @@ class TestRustPerformance:
             print(f"Solver performance ({empties} empties):")
             print(f"  Python: {python_time:.4f}s ({iterations/python_time:.0f} ops/s)")
             print(f"  Rust:   {rust_time:.4f}s ({iterations/rust_time:.0f} ops/s)")
-            print(f"  Speedup: {python_time/rust_time:.1f}x")
+            
+            if rust_time > 0:
+                print(f"  Speedup: {python_time/rust_time:.1f}x")
+            else:
+                print(f"  Speedup: ∞ (Rust too fast to measure)")
             
             # Rust should provide meaningful speedup
             assert rust_time < python_time, "Rust solver should be faster than Python"

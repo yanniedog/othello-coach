@@ -35,6 +35,7 @@ from othello_coach.trainer.trainer import Trainer
 from othello_coach.gauntlet.gauntlet import GauntletRunner
 from othello_coach.novelty.radar import NoveltyRadar
 from othello_coach.api.server import APIServer
+from sqlalchemy import text
 
 
 class TestGUICoreFeatures:
@@ -406,11 +407,6 @@ class TestTrainingSystem:
     
     def test_training_session_generation(self):
         """Test training session generation works"""
-        # Skip database tests in CI/headless environment
-        import os
-        if os.environ.get("CI") or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
-            pytest.skip("Skipping database tests in headless environment")
-            
         config = {
             'db': {'path': ':memory:'},
             'trainer': {
@@ -422,6 +418,31 @@ class TestTrainingSystem:
         }
         
         trainer = Trainer(config)
+        
+        # Add some sample positions to the database for testing
+        from othello_coach.engine.board import start_board
+        from othello_coach.db.migrate import ensure_schema
+        import sqlite3
+        
+        # Get the database connection from the trainer's scheduler
+        db_path = trainer.scheduler.engine.url.database
+        if db_path == ':memory:':
+            # For in-memory database, we need to add data through the trainer's connection
+            with trainer.scheduler.engine.connect() as conn:
+                # Add a sample position (start board)
+                start_board_obj = start_board()
+                conn.execute(text("""
+                    INSERT OR REPLACE INTO positions (hash, black, white, stm, ply)
+                    VALUES (:hash, :black, :white, :stm, :ply)
+                """), {
+                    'hash': start_board_obj.hash,
+                    'black': start_board_obj.B,
+                    'white': start_board_obj.W,
+                    'stm': start_board_obj.stm,
+                    'ply': start_board_obj.ply
+                })
+                conn.commit()
+        
         session = trainer.get_daily_session()
         
         # Should return list of trainer items

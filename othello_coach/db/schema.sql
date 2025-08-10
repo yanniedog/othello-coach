@@ -1,12 +1,12 @@
 CREATE TABLE IF NOT EXISTS positions(
-  hash INTEGER PRIMARY KEY,
-  black INTEGER NOT NULL,
-  white INTEGER NOT NULL,
+  hash TEXT PRIMARY KEY,
+  black TEXT NOT NULL,
+  white TEXT NOT NULL,
   stm   INTEGER NOT NULL,
   ply   INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS analyses(
-  hash INTEGER NOT NULL,
+  hash TEXT NOT NULL,
   depth INTEGER NOT NULL,
   score INTEGER NOT NULL,
   flag  INTEGER NOT NULL,
@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS analyses(
 );
 CREATE INDEX IF NOT EXISTS idx_analyses_dge8 ON analyses(depth) WHERE depth >= 8;
 CREATE TABLE IF NOT EXISTS moves(
-  from_hash INTEGER NOT NULL,
+  from_hash TEXT NOT NULL,
   move INTEGER NOT NULL,
-  to_hash INTEGER NOT NULL,
+  to_hash TEXT NOT NULL,
   visits INTEGER NOT NULL,
   wins INTEGER NOT NULL,
   draws INTEGER NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS moves(
 );
 CREATE INDEX IF NOT EXISTS idx_moves_to ON moves(to_hash);
 CREATE TABLE IF NOT EXISTS features(
-  hash INTEGER PRIMARY KEY,
+  hash TEXT PRIMARY KEY,
   mobility INTEGER,
   pot_mob INTEGER,
   frontier INTEGER,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS features(
 );
 CREATE TABLE IF NOT EXISTS games(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  start_hash INTEGER NOT NULL,
+  start_hash TEXT NOT NULL,
   result INTEGER NOT NULL,
   length INTEGER NOT NULL,
   tags TEXT,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS games(
   finished_at DATETIME
 );
 CREATE TABLE IF NOT EXISTS notes(
-  hash INTEGER PRIMARY KEY,
+  hash TEXT PRIMARY KEY,
   text TEXT
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(text);
@@ -71,7 +71,7 @@ END;
 
 -- V1.1 Tables
 CREATE TABLE IF NOT EXISTS trainer(
-  hash INTEGER PRIMARY KEY,
+  hash TEXT PRIMARY KEY,
   box INTEGER NOT NULL DEFAULT 1,
   due DATE,
   streak INTEGER NOT NULL DEFAULT 0,

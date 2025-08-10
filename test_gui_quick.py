@@ -125,12 +125,18 @@ def test_config_loading():
             print("✅ Configuration loaded successfully")
             
             # Check required sections
-            required_sections = ['feature_flags', 'api', 'trainer', 'gauntlet']
+            required_sections = ['feature_flags', 'api', 'trainer']
             for section in required_sections:
                 if section in config:
                     print(f"✅ {section} section present")
                 else:
                     print(f"⚠️  {section} section missing")
+            
+            # Check gauntlet feature flag
+            if 'feature_flags' in config and config['feature_flags'].get('gauntlet', False):
+                print("✅ gauntlet feature enabled")
+            else:
+                print("⚠️  gauntlet feature not enabled")
         except FileNotFoundError:
             print("⚠️  Config file not found (this is normal for first run)")
             print("✅ Configuration loading mechanism works")
