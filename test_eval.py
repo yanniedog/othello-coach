@@ -20,7 +20,7 @@ def test_evaluation():
     
     # Make a few moves and evaluate
     for move_num in range(1, 6):
-        legal = legal_moves_mask(board)
+        legal = legal_moves_mask(board.B, board.W, board.stm)
         if legal == 0:
             print("No legal moves available")
             break

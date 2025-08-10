@@ -1,0 +1,69 @@
+"""
+Rust Kernel Module for Othello Coach
+
+This module provides a stable interface to the high-performance Rust implementations
+of Othello game logic. It handles the dynamic loading of the compiled Rust library
+and provides pure Python fallbacks if the library is not available.
+"""
+import importlib.util
+import sys
+from pathlib import Path
+
+# --- Constants ---
+RUST_AVAILABLE = False
+__all__ = [
+    'legal_mask', 'flip_mask', 'stability_proxy', 'potential_mobility',
+    'parity_regions', 'exact_solver', 'RUST_AVAILABLE'
+]
+
+# --- Dynamic Loading of the Rust Kernel ---
+try:
+    # The compiled library will be in a location findable by the Python interpreter,
+    # typically in site-packages. We can import it directly.
+    # The name of the module is defined in `rust_kernel/Cargo.toml` under `[lib]`.
+    from rust_kernel import _rust_kernel as rust_lib
+    
+    # Check for a key function to ensure the library is not just a placeholder
+    if hasattr(rust_lib, 'legal_mask'):
+        # Import all public functions from the Rust library into this module's namespace
+        for func_name in rust_lib.__all__:
+            globals()[func_name] = getattr(rust_lib, func_name)
+        RUST_AVAILABLE = True
+    else:
+        raise ImportError("Rust library is a placeholder without functions.")
+
+except ImportError:
+    # --- Pure Python Fallbacks ---
+    # This block is executed if the Rust kernel cannot be imported.
+    # It defines pure Python versions of the functions.
+    from othello_coach.engine.movegen_ref import generate_legal_mask as legal_mask
+    from othello_coach.engine.movegen_ref import generate_flip_mask as flip_mask
+
+    def stability_proxy(b: int, w: int) -> int:
+        # A simple fallback, not a true stability calculation
+        return 0
+
+    def potential_mobility(b: int, w: int, stm: int) -> int:
+        # Fallback returns 0, indicating no data
+        return 0
+
+    def parity_regions(b: int, w: int) -> list:
+        # Fallback returns an empty list
+        return []
+
+    def exact_solver(b: int, w: int, stm: int, empties: int, tt_mb: int) -> int:
+        # Fallback returns 0, indicating no solution
+        return 0
+    
+    # Ensure all functions in __all__ are defined
+    for name in __all__:
+        if name not in globals():
+            # Create a dummy function for any missing fallbacks
+            globals()[name] = lambda *args, **kwargs: 0
+    
+    RUST_AVAILABLE = False
+
+
+# Final check to ensure we have a consistent state
+if 'legal_mask' not in globals():
+    raise RuntimeError("Othello move generation logic is completely unavailable.")

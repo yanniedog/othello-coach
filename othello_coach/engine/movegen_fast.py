@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from .board import NOT_A, NOT_H
 
+# Try to import Rust kernel for acceleration
+try:
+    import rust_kernel
+    RUST_AVAILABLE = True
+except ImportError:
+    RUST_AVAILABLE = False
+
 # Directions in deltas: N, S, E, W, NE, NW, SE, SW
 DIRS = [8, -8, 1, -1, 9, 7, -7, -9]
 
@@ -27,6 +34,11 @@ def _shift(bb: int, d: int) -> int:
 
 
 def legal_moves_mask(B: int, W: int, stm: int) -> int:
+    """Get legal moves mask - uses Rust kernel if available for speed"""
+    if RUST_AVAILABLE:
+        return rust_kernel.legal_mask(B, W, stm)
+    
+    # Fallback to pure Python implementation
     own, opp = (B, W) if stm == 0 else (W, B)
     empty = ~(B | W) & 0xFFFFFFFFFFFFFFFF
     moves = 0
@@ -43,7 +55,13 @@ def legal_moves_mask(B: int, W: int, stm: int) -> int:
     return moves
 
 
-def flip_mask_for_move(own: int, opp: int, sq: int) -> int:
+def flip_mask(b: int, w: int, stm: int, sq: int) -> int:
+    """Get flip mask for a move - uses Rust kernel if available for speed"""
+    if RUST_AVAILABLE:
+        return rust_kernel.flip_mask(b, w, stm, sq)
+    
+    # Fallback to pure Python implementation
+    own, opp = (b, w) if stm == 0 else (w, b)
     # Re-traverse each direction from the move square to compute flips
     m = 1 << sq
     flips = 0
@@ -60,4 +78,4 @@ def flip_mask_for_move(own: int, opp: int, sq: int) -> int:
 
 # Export with expected name for tests
 generate_legal_mask = legal_moves_mask
-generate_flip_mask = flip_mask_for_move
+generate_flip_mask = flip_mask

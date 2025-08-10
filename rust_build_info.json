@@ -1,0 +1,7 @@
+{
+  "build_time": "2025-08-10 16:15:22",
+  "rust_version": "rustc 1.88.0 (6b00bc388 2025-06-23)",
+  "cargo_version": "cargo 1.88.0 (873a06493 2025-05-10)",
+  "maturin_version": "maturin 1.9.3",
+  "build_success": true
+}

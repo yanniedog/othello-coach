@@ -229,11 +229,17 @@ class GauntletRunner:
             move_time = time.time() - move_start_time
             
             # Log slow moves for debugging
-            if move_time > 1.0:  # More than 1 second
+            # Use a more appropriate threshold based on the strength profile
+            # Stronger players are allowed more time, so adjust threshold accordingly
+            expected_time_ms = strength.soft_time_ms
+            expected_time_sec = expected_time_ms / 1000.0
+            slow_threshold = max(1.0, expected_time_sec * 1.5)  # Allow 50% over expected time
+            
+            if move_time > slow_threshold:
                 import logging
                 logging.getLogger(__name__).warning(
-                    "Slow move: %.2fs for move %d in %s vs %s game", 
-                    move_time, len(moves), match.white_profile, match.black_profile
+                    "Slow move: %.2fs for move %d in %s vs %s game (expected: %.2fs, threshold: %.2fs)", 
+                    move_time, len(moves), match.white_profile, match.black_profile, expected_time_sec, slow_threshold
                 )
             
             if move is None:
@@ -272,7 +278,10 @@ class GauntletRunner:
         match.result = result
         match.moves = moves
         match.passes = passes  # Store pass information
-        match.game_length = len(moves) + len(passes)
+        # Game length should be the number of pieces placed (excluding starting position)
+        # Starting position has 4 pieces, so game_length = pieces_placed - 4
+        total_pieces = white_discs + black_discs
+        match.game_length = total_pieces - 4  # Subtract starting pieces
         match.finished_at = datetime.now()
         
         return match

@@ -28,15 +28,21 @@ pub fn generate_legal_mask(b: u64, w: u64, stm: u8) -> u64 {
 
 /// Check if a move at square sq captures pieces in given direction
 fn has_captures_in_direction(own: u64, opp: u64, sq: u8, dir: i8) -> bool {
-    let mut pos = sq as i8 + dir;
+    let mut pos = sq as i8;
     let mut captured_count = 0;
     
     // Walk in direction until we hit edge, empty square, or own piece
-    while pos >= 0 && pos < 64 {
+    loop {
+        pos += dir;
+
+        if pos < 0 || pos >= 64 {
+            return false; // Hit edge
+        }
+
         // Check for edge wrap-around
         match dir {
-            1 | 9 | -7 => if pos % 8 == 0 && sq % 8 == 7 { return false; }, // East-bound wrap
-            -1 | -9 | 7 => if pos % 8 == 7 && sq % 8 == 0 { return false; }, // West-bound wrap
+            1 | 9 | -7 => if pos % 8 == 0 { return false; }, // East-bound wrap
+            -1 | -9 | 7 => if pos % 8 == 7 { return false; }, // West-bound wrap
             _ => {}
         }
         
@@ -49,11 +55,7 @@ fn has_captures_in_direction(own: u64, opp: u64, sq: u8, dir: i8) -> bool {
         } else {
             return false; // Hit empty square
         }
-        
-        pos += dir;
     }
-    
-    false // Hit edge without finding own piece
 }
 
 /// Generate flip mask for a specific move

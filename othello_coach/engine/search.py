@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional
 
 from .board import Board, make_move, compute_hash
 from .movegen_fast import legal_moves_mask
-from .eval import evaluate
+from .eval import evaluate_position
 from .solver import solve_exact
 from .tt import TranspositionTable, EXACT, LOWER, UPPER
 
@@ -47,6 +47,10 @@ class Searcher:
         self.tt.new_generation()
         aspiration = 50
         for depth in range(1, limits.max_depth + 1):
+            # Check time before starting each depth to prevent slow moves
+            if (time.perf_counter() - start) * 1000 > limits.time_ms * 0.8:  # Stop at 80% of time limit
+                break
+                
             alpha = best_score - aspiration
             beta = best_score + aspiration
             score, line = self._negamax(board, depth, alpha, beta, start, limits, ply=0)
@@ -80,7 +84,7 @@ class Searcher:
                     sq = lsb.bit_length() - 1
                     m ^= lsb
                     b2, _ = make_move(board, sq)
-                    score = -evaluate(b2)
+                    score = -evaluate_position(b2)
                     if score > best_score:
                         best_score = score
                         best_move = sq
@@ -94,10 +98,10 @@ class Searcher:
     def _negamax(self, board: Board, depth: int, alpha: int, beta: int, start, limits: SearchLimits, ply: int) -> Tuple[int, List[int]]:
         # Prevent infinite recursion
         if ply > 100:  # Maximum recursion depth
-            return evaluate(board), []
+            return evaluate_position(board), []
         now_ms = (time.perf_counter() - start) * 1000
         if self.nodes >= limits.node_cap or now_ms > limits.time_ms:
-            return evaluate(board), []
+            return evaluate_position(board), []
         empties = 64 - (board.B | board.W).bit_count()
         if empties <= limits.endgame_exact_empties:
             # Endgame: pick the move that maximizes exact outcome to ensure a PV exists
@@ -107,13 +111,22 @@ class Searcher:
                 new_stm = 1 - board.stm
                 b_pass = Board(board.B, board.W, new_stm, board.ply + 1, compute_hash(board.B, board.W, new_stm))
                 score, _ = self._negamax(b_pass, max(0, depth - 1), -beta, -alpha, start, limits, ply + 1)
+                # For pass moves, return empty PV since it's not a real move
                 return -score, []
             best_score = -10_000
             best_sq = -1
             # Only allow exact solving if we have comfortable time and node budget
+            # Be more conservative to prevent slow moves
             time_left_ms = max(0, limits.time_ms - now_ms)
             near_node_cap = self.nodes > max(0, limits.node_cap - 10_000)
-            allow_exact = (time_left_ms > max(50, int(0.3 * limits.time_ms))) and (not near_node_cap) and (empties <= 10)
+            
+            # More restrictive conditions for exact solving to prevent slow moves
+            # Only use exact solver if we have plenty of time left and few empties
+            allow_exact = (
+                time_left_ms > max(200, int(0.5 * limits.time_ms)) and  # More time buffer
+                not near_node_cap and 
+                empties <= 8  # Reduced from 10 to 8 for safety
+            )
             m = mask
             while m:
                 lsb = m & -m
@@ -124,7 +137,7 @@ class Searcher:
                     score = -solve_exact(b2)
                 else:
                     # Fall back to a fast evaluation to guarantee responsiveness
-                    score = -evaluate(b2)
+                    score = -evaluate_position(b2)
                 if score > best_score:
                     best_score = score
                     best_sq = sq
@@ -139,7 +152,7 @@ class Searcher:
             mask = legal_moves_mask(board.B, board.W, board.stm)
             if mask == 0:
                 # No legal moves - pass
-                return evaluate(board), []
+                return evaluate_position(board), []
             
             best_score = -10_000
             best_move = -1
@@ -149,7 +162,7 @@ class Searcher:
                 sq = lsb.bit_length() - 1
                 m ^= lsb
                 b2, _ = make_move(board, sq)
-                score = -evaluate(b2)
+                score = -evaluate_position(b2)
                 if score > best_score:
                     best_score = score
                     best_move = sq
@@ -160,13 +173,21 @@ class Searcher:
         entry = self.tt.probe(board.hash)
         if entry and entry.depth >= depth:
             if entry.flag == EXACT:
-                return entry.score, []
+                # For exact entries, we should have a PV, but if not, return the best move
+                if entry.best >= 0:
+                    return entry.score, [entry.best]
+                else:
+                    return entry.score, []
             if entry.flag == LOWER:
                 alpha = max(alpha, entry.score)
             elif entry.flag == UPPER:
                 beta = min(beta, entry.score)
             if alpha >= beta:
-                return entry.score, []
+                # For beta cutoffs, return the best move if available
+                if entry.best >= 0:
+                    return entry.score, [entry.best]
+                else:
+                    return entry.score, []
 
         mask = legal_moves_mask(board.B, board.W, board.stm)
         if mask == 0:
@@ -174,6 +195,7 @@ class Searcher:
             new_stm = 1 - board.stm
             b_pass = Board(board.B, board.W, new_stm, board.ply + 1, compute_hash(board.B, board.W, new_stm))
             score, line = self._negamax(b_pass, depth - 1, -beta, -alpha, start, limits, ply+1)
+            # For pass moves, we don't add a move to the PV since it's not a real move
             return -score, []
 
         # Generate moves list

@@ -12,3 +12,4 @@ pyo3 = { version = "0.22", features = ["extension-module"] }
 
 [package.metadata.maturin]
 name = "rust_kernel"
+module-name = "rust_kernel._rust_kernel"

@@ -70,9 +70,7 @@ class TestRustAcceleration:
         legal_moves = [19, 26, 37, 44]  # Legal moves from start
         
         for move in legal_moves:
-            # Python function needs own/opp based on stm
-            own, opp = (b, w) if stm == 0 else (w, b)
-            python_flips = generate_flip_mask(own, opp, move)
+            python_flips = generate_flip_mask(b, w, stm, move)
             rust_flips = rust_kernel.flip_mask(b, w, stm, move)
             
             assert python_flips == rust_flips, f"Flip mask mismatch for move {move}"

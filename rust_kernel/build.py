@@ -8,7 +8,17 @@ import shutil
 import time
 from pathlib import Path
 import json
+import locale
 
+# Force UTF-8 encoding for all operations
+if sys.platform == "win32":
+    # On Windows, set UTF-8 as the default encoding
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    # Also try to set console code page to UTF-8
+    try:
+        subprocess.run(["chcp", "65001"], shell=True, capture_output=True, check=False)
+    except:
+        pass
 
 class RustKernelBuilder:
     """Robust Rust kernel builder with comprehensive error handling"""
@@ -29,6 +39,38 @@ class RustKernelBuilder:
         with open(self.build_log, 'a', encoding='utf-8') as f:
             f.write(log_msg + '\n')
     
+    def run_subprocess_safe(self, cmd, **kwargs):
+        """Run subprocess with safe encoding handling"""
+        # Set default encoding to UTF-8
+        if 'text' in kwargs and kwargs['text']:
+            kwargs['encoding'] = 'utf-8'
+            kwargs['errors'] = 'replace'  # Replace invalid characters instead of failing
+        
+        # On Windows, use shell=True for better encoding support
+        if sys.platform == "win32" and isinstance(cmd, list):
+            kwargs['shell'] = True
+            cmd = " ".join(cmd)
+        
+        try:
+            return subprocess.run(cmd, **kwargs)
+        except UnicodeDecodeError as e:
+            self.log(f"Encoding error in subprocess: {e}", "ERROR")
+            # Fallback: try without text mode and decode manually
+            kwargs.pop('text', None)
+            kwargs.pop('encoding', None)
+            kwargs.pop('errors', None)
+            result = subprocess.run(cmd, capture_output=True, **kwargs)
+            
+            # Manual decode with error handling
+            try:
+                result.stdout = result.stdout.decode('utf-8', errors='replace')
+                result.stderr = result.stderr.decode('utf-8', errors='replace')
+            except:
+                result.stdout = result.stdout.decode('latin-1', errors='replace')
+                result.stderr = result.stderr.decode('latin-1', errors='replace')
+            
+            return result
+    
     def check_rust_toolchain(self) -> bool:
         """Check if Rust toolchain is available and working"""
         self.log("Checking Rust toolchain...")
@@ -47,11 +89,11 @@ class RustKernelBuilder:
         
         # Verify tool versions
         try:
-            rustc_version = subprocess.run(
+            rustc_version = self.run_subprocess_safe(
                 ["rustc", "--version"], 
                 capture_output=True, text=True, check=True
             ).stdout.strip()
-            cargo_version = subprocess.run(
+            cargo_version = self.run_subprocess_safe(
                 ["cargo", "--version"], 
                 capture_output=True, text=True, check=True
             ).stdout.strip()
@@ -71,7 +113,7 @@ class RustKernelBuilder:
         
         if shutil.which("maturin"):
             try:
-                version = subprocess.run(
+                version = self.run_subprocess_safe(
                     ["maturin", "--version"], 
                     capture_output=True, text=True, check=True
                 ).stdout.strip()
@@ -83,12 +125,12 @@ class RustKernelBuilder:
         # Install maturin if not found
         self.log("Installing maturin...")
         try:
-            subprocess.run([
+            self.run_subprocess_safe([
                 sys.executable, "-m", "pip", "install", "--upgrade", "maturin"
             ], check=True, capture_output=True)
             
             # Verify installation
-            version = subprocess.run(
+            version = self.run_subprocess_safe(
                 ["maturin", "--version"], 
                 capture_output=True, text=True, check=True
             ).stdout.strip()
@@ -131,12 +173,27 @@ class RustKernelBuilder:
             
             # Build with maturin
             self.log("Running maturin build...")
-            result = subprocess.run([
+            
+            # Install in development mode with maturin
+            self.log("Installing in development mode...")
+            result = self.run_subprocess_safe([
                 "maturin", "develop", "--release", "--quiet"
             ], capture_output=True, text=True, check=True)
             
             # Return to original directory
             os.chdir(original_dir)
+            
+            # Verify the module was created
+            self.log("Verifying module creation...")
+            try:
+                # Try to import the module
+                import rust_kernel
+                if hasattr(rust_kernel, 'AVAILABLE'):
+                    self.log("✓ Rust kernel module created successfully!")
+                else:
+                    self.log("Warning: Module created but AVAILABLE flag not set", "WARNING")
+            except ImportError as e:
+                self.log(f"Warning: Module import test failed: {e}", "WARNING")
             
             self.log("✓ Rust kernel built successfully!")
             return True
@@ -172,15 +229,30 @@ class RustKernelBuilder:
             # Import the kernel
             import rust_kernel
             
+            # Check if the kernel is available
+            if not hasattr(rust_kernel, 'AVAILABLE') or not rust_kernel.AVAILABLE:
+                self.log("✗ Rust kernel not available after build", "ERROR")
+                return False
+            
             # Test basic functionality
             b, w, stm = 0x0000000810000000, 0x0000001008000000, 0
-            legal = rust_kernel.legal_mask(b, w, stm)
             
-            if legal > 0:
-                self.log("✓ Rust kernel test passed!")
-                return True
-            else:
-                self.log("✗ Rust kernel test failed: no legal moves found", "ERROR")
+            # Check if the function exists
+            if not hasattr(rust_kernel, 'legal_mask'):
+                self.log("✗ Rust kernel test failed: legal_mask function not found", "ERROR")
+                return False
+            
+            try:
+                legal = rust_kernel.legal_mask(b, w, stm)
+                
+                if legal > 0:
+                    self.log("✓ Rust kernel test passed!")
+                    return True
+                else:
+                    self.log("✗ Rust kernel test failed: no legal moves found", "ERROR")
+                    return False
+            except Exception as e:
+                self.log(f"✗ Rust kernel test failed: function error: {e}", "ERROR")
                 return False
                 
         except ImportError as e:
@@ -202,21 +274,21 @@ class RustKernelBuilder:
         
         try:
             # Get Rust version
-            rustc_result = subprocess.run(
+            rustc_result = self.run_subprocess_safe(
                 ["rustc", "--version"], 
                 capture_output=True, text=True, check=True
             )
             build_info["rust_version"] = rustc_result.stdout.strip()
             
             # Get Cargo version
-            cargo_result = subprocess.run(
+            cargo_result = self.run_subprocess_safe(
                 ["cargo", "--version"], 
                 capture_output=True, text=True, check=True
             )
             build_info["cargo_version"] = cargo_result.stdout.strip()
             
             # Get maturin version
-            maturin_result = subprocess.run(
+            maturin_result = self.run_subprocess_safe(
                 ["maturin", "--version"], 
                 capture_output=True, text=True, check=True
             )

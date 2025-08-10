@@ -77,15 +77,14 @@ def legal_moves_mask(board: Board) -> int:
 
 
 def make_move(board: Board, sq: int) -> Tuple[Board, StackFrame]:
-    from .movegen_fast import flip_mask_for_move
+    from .movegen_fast import flip_mask
 
     mask = 1 << sq
     legal = legal_moves_mask(board)
     if not (mask & legal):
         raise ValueError("illegal move")
-    own = board.B if board.stm == 0 else board.W
-    opp = board.W if board.stm == 0 else board.B
-    flips = flip_mask_for_move(own, opp, sq)
+    
+    flips = flip_mask(board.B, board.W, board.stm, sq)
     if flips == 0:
         raise ValueError("illegal move (no flips)")
 
@@ -110,6 +109,8 @@ def make_move(board: Board, sq: int) -> Tuple[Board, StackFrame]:
         h ^= _Z_KEYS[other_idx][i]
         f ^= lsb
 
+    own = board.B if board.stm == 0 else board.W
+    opp = board.W if board.stm == 0 else board.B
     own |= mask | flips
     opp &= ~flips & ((1 << 64) - 1)
 
