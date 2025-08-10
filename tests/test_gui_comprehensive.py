@@ -435,9 +435,9 @@ class TestTrainingSystem:
                     INSERT OR REPLACE INTO positions (hash, black, white, stm, ply)
                     VALUES (:hash, :black, :white, :stm, :ply)
                 """), {
-                    'hash': start_board_obj.hash,
-                    'black': start_board_obj.B,
-                    'white': start_board_obj.W,
+                    'hash': str(start_board_obj.hash),
+                    'black': str(start_board_obj.B),
+                    'white': str(start_board_obj.W),
                     'stm': start_board_obj.stm,
                     'ply': start_board_obj.ply
                 })

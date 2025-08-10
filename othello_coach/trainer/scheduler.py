@@ -11,7 +11,7 @@ import os
 @dataclass
 class TrainerItem:
     """Item in the training queue"""
-    hash: int
+    hash: str
     box: int
     due: Optional[date]
     streak: int
@@ -128,7 +128,7 @@ class LeitnerScheduler:
         
         return items
     
-    def _load_trainer_item(self, hash_val: int, box: int, due: date, 
+    def _load_trainer_item(self, hash_val: str, box: int, due: date, 
                           streak: int, suspended: bool) -> Optional[TrainerItem]:
         """Load trainer item with content"""
         # Determine item type and load content
@@ -143,11 +143,15 @@ class LeitnerScheduler:
             content={'hash': hash_val}
         )
     
-    def _create_new_item(self, hash_val: int, black: int, white: int, 
+    def _create_new_item(self, hash_val: str, black: str, white: str, 
                         stm: int, ply: int) -> Optional[TrainerItem]:
         """Create new trainer item from position"""
+        # Convert string values to integers for classification
+        black_int = int(black)
+        white_int = int(white)
+        
         # Determine what type of training item this should be
-        item_type = self._classify_position(black, white, stm, ply)
+        item_type = self._classify_position(black_int, white_int, stm, ply)
         
         if item_type:
             return TrainerItem(
