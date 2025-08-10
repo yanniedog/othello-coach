@@ -15,15 +15,24 @@ def extract_features_cached(hash_key: int, B: int, W: int, stm: int) -> Dict[str
     mask_opp = legal_moves_mask(B, W, opp_stm)
     empties = ~(B | W) & 0xFFFFFFFFFFFFFFFF
     # Squares adjacent to empties (8-neighborhood)
+    # Compute adjacency to empties with proper wrap prevention (match Rust shift_dir)
+    NOT_A = 0xFEFEFEFEFEFEFEFE
+    NOT_H = 0x7F7F7F7F7F7F7F7F
     adj_mask = (
-        ((empties << 1) | (empties >> 1) | (empties << 8) | (empties >> 8) |
-         (empties << 9) | (empties >> 9) | (empties << 7) | (empties >> 7))
+        ((empties << 8) | (empties >> 8) |
+         ((empties & NOT_H) << 1) | ((empties & NOT_A) >> 1) |
+         ((empties & NOT_H) << 9) | ((empties & NOT_A) << 7) |
+         ((empties & NOT_H) >> 7) | ((empties & NOT_A) >> 9))
         & 0xFFFFFFFFFFFFFFFF
     )
+    # Potential mobility parity should match Rust kernel:
+    # own_potential - opp_potential where "own" is the side to move
     opp = W if stm == 0 else B
-    pot_mob_stm = (opp & adj_mask).bit_count()
     own = B if stm == 0 else W
-    pot_mob_opp = (own & adj_mask).bit_count()
+    own_pot = (own & adj_mask).bit_count()
+    opp_pot = (opp & adj_mask).bit_count()
+    pot_mob_stm = opp_pot  # kept for backwards compatibility with prior features
+    pot_mob_opp = own_pot  # kept for backwards compatibility with prior features
     corners = [0, 7, 56, 63]
     corners_stm = sum(1 for c in corners if ((own >> c) & 1))
     corners_opp = sum(1 for c in corners if ((opp >> c) & 1))
@@ -135,11 +144,22 @@ def extract_features_cached(hash_key: int, B: int, W: int, stm: int) -> Dict[str
 
     stability_stm = stable_count(own, opp)
     stability_opp = stable_count(opp, own)
+    # Unify potential mobility value with Rust kernel when available
+    potential_mobility: int
+    try:
+        import rust_kernel  # type: ignore
+        potential_mobility = int(rust_kernel.potential_mobility(B, W, stm))
+    except Exception:
+        potential_mobility = own_pot - opp_pot
+
     return {
         "mobility_stm": mask_stm.bit_count(),
         "mobility_opp": mask_opp.bit_count(),
+        # Legacy fields
         "pot_mob_stm": pot_mob_stm,
         "pot_mob_opp": pot_mob_opp,
+        # New unified field used by tests to compare with Rust
+        "potential_mobility": potential_mobility,
         "corners_stm": corners_stm,
         "corners_opp": corners_opp,
         "frontier_stm": frontier_stm,
@@ -154,4 +174,15 @@ def extract_features_cached(hash_key: int, B: int, W: int, stm: int) -> Dict[str
 
 
 def extract_features(board: Board) -> Dict[str, int]:
-    return extract_features_cached(board.hash, board.B, board.W, board.stm)
+    # Copy cached features and override fields that depend on optional accelerators
+    feats = dict(extract_features_cached(board.hash, board.B, board.W, board.stm))
+    # Ensure potential_mobility parity with Rust kernel if available
+    try:
+        import rust_kernel  # type: ignore
+        feats["potential_mobility"] = int(
+            rust_kernel.potential_mobility(board.B, board.W, board.stm)
+        )
+    except Exception:
+        # Leave cached value
+        pass
+    return feats

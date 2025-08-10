@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QLabel,
 )
 import os
+import sqlite3
+from typing import Optional
 
 # In offscreen/headless CI environments, constructing real Qt widgets can fail even with
 # the offscreen platform plugin. Provide a minimal stub fallback that satisfies unit
@@ -333,21 +335,78 @@ class MainWindow(BaseWindow):
 
     # Menu action handlers
     def _load_position(self) -> None:
-        """Load a position from file or hash."""
+        """Load a position by hash from the local database and display it."""
         from PyQt6.QtWidgets import QInputDialog, QMessageBox
-        hash_str, ok = QInputDialog.getText(self, "Load Position", "Enter position hash:")
-        if ok and hash_str:
+        if _OFFSCREEN:
+            return
+        hash_str, ok = QInputDialog.getText(self, "Load Position", "Enter position hash (hex or int):")
+        if not (ok and hash_str):
+            return
+        try:
+            # Parse hash input
+            h: int = int(hash_str, 16) if hash_str.lower().startswith("0x") else int(hash_str)
+            # Query database
+            from ..tools.diag import DB_PATH
+            from ..db.queries import get_position
+            conn = sqlite3.connect(str(DB_PATH))
             try:
-                # Would load from database
-                QMessageBox.information(self, "Load Position", f"Loading position: {hash_str}")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"Failed to load position: {e}")
+                row = get_position(conn, h)
+            finally:
+                conn.close()
+            if not row:
+                QMessageBox.warning(self, "Not Found", f"No position with hash {h} found")
+                return
+            _hash, black, white, stm, ply = row
+            from ..engine.board import Board
+            from ..engine.board import compute_hash
+            # Trust DB hash; recompute if missing
+            board_hash = _hash if _hash else compute_hash(black, white, stm)
+            self.board.board = Board(B=black, W=white, stm=stm, ply=ply, hash=board_hash)
+            self.board.game_over = False
+            self.board.last_move_sq = None
+            self.board.last_move_info = f"Loaded {h}"
+            self.board._ensure_playable_state()
+            self.board._draw()
+            self.board._emit_game_state()
+            QMessageBox.information(self, "Loaded", f"Position {h} loaded successfully")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to load position: {e}")
 
     def _save_position(self) -> None:
-        """Save current position."""
+        """Save current position to the database using the background writer."""
         from PyQt6.QtWidgets import QMessageBox
-        if hasattr(self, 'board'):
-            QMessageBox.information(self, "Save Position", f"Position hash: {self.board.board.hash}")
+        try:
+            b = self.board.board
+            payload = {
+                "op": "pos",
+                "payload": {
+                    "hash": int(b.hash),
+                    "black": int(b.B),
+                    "white": int(b.W),
+                    "stm": int(b.stm),
+                    "ply": int(b.ply),
+                },
+            }
+            app = QApplication.instance()
+            if app is not None:
+                q = app.property("db_queue")
+                if q is not None:
+                    q.put(payload)
+                else:
+                    # Fallback: write synchronously
+                    from ..tools.diag import DB_PATH
+                    conn = sqlite3.connect(str(DB_PATH))
+                    try:
+                        with conn:
+                            conn.execute(
+                                "INSERT OR REPLACE INTO positions(hash,black,white,stm,ply) VALUES(?,?,?,?,?)",
+                                (b.hash, b.B, b.W, b.stm, b.ply),
+                            )
+                    finally:
+                        conn.close()
+            QMessageBox.information(self, "Saved", f"Saved position with hash {b.hash}")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Error", f"Failed to save position: {e}")
 
     def _create_strength_menu(self, menu) -> None:
         """Create strength profile selection menu."""
@@ -378,9 +437,11 @@ class MainWindow(BaseWindow):
         QMessageBox.information(self, "Strength Profile", f"Set strength to: {profile}")
 
     def _show_engine_settings(self) -> None:
-        """Show engine configuration dialog."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Engine Settings", "Engine settings dialog would open here")
+        """Open Preferences dialog focused on Engine tab."""
+        if _OFFSCREEN:
+            return
+        # Reuse Preferences UI and select Engine tab
+        self._show_preferences(focus_tab="Engine")
 
     def _show_gdl_builder(self) -> None:
         """Show GDL tree builder dialog."""
@@ -442,9 +503,64 @@ class MainWindow(BaseWindow):
             QMessageBox.warning(self, "GDL Error", f"Failed to build tree: {e}")
 
     def _deep_analysis(self) -> None:
-        """Run deep analysis on current position."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Deep Analysis", "Deep analysis dialog would open here")
+        """Run deep analysis on current position and persist results."""
+        if _OFFSCREEN:
+            return
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QProgressBar
+        from ..engine.search import Searcher, SearchLimits
+        from ..tools.diag import log_event
+        import time
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Deep Analysis")
+        lay = QVBoxLayout(dlg)
+        status = QLabel("Analyzing...")
+        prog = QProgressBar()
+        prog.setRange(0, 0)
+        lay.addWidget(status)
+        lay.addWidget(prog)
+        btn_close = QPushButton("Close")
+        btn_close.setEnabled(False)
+        lay.addWidget(btn_close)
+
+        def run() -> None:
+            s = Searcher()
+            limits = SearchLimits(max_depth=12, time_ms=4000, node_cap=2_000_000)
+            t0 = time.perf_counter()
+            result = s.search(self.board.board, limits)
+            dt = int((time.perf_counter() - t0) * 1000)
+            # Persist analysis
+            app = QApplication.instance()
+            try:
+                if app is not None:
+                    q = app.property("db_queue")
+                    if q is not None:
+                        q.put({
+                            "op": "ana",
+                            "payload": {
+                                "hash": int(self.board.board.hash),
+                                "depth": int(result.depth),
+                                "score": int(result.score_cp),
+                                "flag": 0,
+                                "best_move": int(result.best_move or -1),
+                                "nodes": int(result.nodes),
+                                "time_ms": int(result.time_ms),
+                                "engine_ver": "1.1.0",
+                            },
+                        })
+            except Exception:
+                pass
+            # Update UI
+            pv_str = ", ".join(self._sq_name(mv) for mv in (result.pv or []))
+            status.setText(f"Score: {result.score_cp} cp, depth {result.depth}, nodes {result.nodes}, {dt} ms\nPV: {pv_str}")
+            prog.setRange(0, 1)
+            prog.setValue(1)
+            btn_close.setEnabled(True)
+            log_event("ui.analysis", "deep_complete", score=result.score_cp, depth=result.depth, nodes=result.nodes, ms=dt)
+
+        QTimer.singleShot(0, run)
+        btn_close.clicked.connect(dlg.close)
+        dlg.exec()
 
     def _start_training(self) -> None:
         """Start training session."""
@@ -491,24 +607,44 @@ class MainWindow(BaseWindow):
         dialog.exec()
 
     def _show_tactics(self) -> None:
-        """Show tactics training."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Tactics", "Tactics training would open here")
+        """Show tactics training tab and prepare a puzzle."""
+        if _OFFSCREEN:
+            return
+        try:
+            if hasattr(self.training, "start_tactics"):
+                self.training.start_tactics()
+        except Exception:
+            pass
 
     def _show_parity_drills(self) -> None:
-        """Show parity drills."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Parity Drills", "Parity drills would open here")
+        """Show parity drill tab and start a drill."""
+        if _OFFSCREEN:
+            return
+        try:
+            if hasattr(self.training, "start_parity_drill"):
+                self.training.start_parity_drill()
+        except Exception:
+            pass
 
     def _show_endgame_drills(self) -> None:
-        """Show endgame drills."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Endgame Drills", "Endgame drills would open here")
+        """Show endgame drill tab and start a drill."""
+        if _OFFSCREEN:
+            return
+        try:
+            if hasattr(self.training, "start_endgame_drill"):
+                self.training.start_endgame_drill()
+        except Exception:
+            pass
 
     def _show_training_progress(self) -> None:
-        """Show training progress."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Training Progress", "Training progress would open here")
+        """Switch to training progress tab and refresh stats."""
+        if _OFFSCREEN:
+            return
+        try:
+            if hasattr(self.training, "show_progress"):
+                self.training.show_progress()
+        except Exception:
+            pass
 
     def _show_selfplay_dialog(self) -> None:
         """Show self-play gauntlet dialog."""
@@ -583,7 +719,7 @@ class MainWindow(BaseWindow):
         
         # Create progress dialog
         progress = QProgressDialog("Initializing gauntlet...", "Cancel", 0, 100, self)
-        progress.setWindowModality(2)  # ApplicationModal
+        progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         progress.show()
         
         try:
@@ -833,30 +969,29 @@ class MainWindow(BaseWindow):
                 
                 def run(self):
                     try:
-                        # Import API server
+                        import asyncio
                         from ..api.server import APIServer
-                        
-                        # Create minimal config
+                        # Create config
                         config = {
-                            'feature_flags': {'api': True},
-                            'api': {'port': self.port, 'token': self.token},
+                            'feature_flags': {
+                                'api': True,
+                                'gdl_authoring': True,
+                                'novelty_radar': True,
+                                'trainer': True,
+                            },
+                            'api': {
+                                'port': self.port,
+                                'token': self.token,
+                                'rate_limit_rps': 100
+                            },
                             'debug': False
                         }
-                        
                         self.status_update.emit("Starting...", f"http://127.0.0.1:{self.port}")
-                        
-                        # Create and start server
                         server = APIServer(config)
                         self.running = True
-                        
-                        # This would normally run the server
-                        # For now, just simulate running
                         self.status_update.emit("Running", f"http://127.0.0.1:{self.port}")
-                        
-                        # Keep thread alive while server runs
-                        while self.running:
-                            self.msleep(1000)
-                            
+                        # Run server until stopped
+                        asyncio.run(server.start(host="127.0.0.1", port=self.port))
                     except Exception as e:
                         self.error_signal.emit(str(e))
                 
@@ -953,14 +1088,94 @@ class MainWindow(BaseWindow):
         help_dialog.exec()
 
     def _show_perft_dialog(self) -> None:
-        """Show performance test dialog."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Performance Test", "Performance test dialog would open here")
+        """Run perft on current position with selectable depth and show result."""
+        if _OFFSCREEN:
+            return
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QSpinBox, QPushButton, QHBoxLayout
+        from ..engine.perft import perft
+        import time
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Performance Test (Perft)")
+        lay = QVBoxLayout(dlg)
+        hl = QHBoxLayout()
+        hl.addWidget(QLabel("Depth:"))
+        depth_spin = QSpinBox(); depth_spin.setRange(1, 8); depth_spin.setValue(5)
+        hl.addWidget(depth_spin); hl.addStretch(); lay.addLayout(hl)
+        run_btn = QPushButton("Run")
+        out = QLabel("")
+        lay.addWidget(run_btn)
+        lay.addWidget(out)
+
+        def run():
+            d = depth_spin.value()
+            t0 = time.perf_counter()
+            nodes = perft(self.board.board, d)
+            ms = int((time.perf_counter() - t0) * 1000)
+            out.setText(f"Nodes: {nodes:,} in {ms} ms")
+
+        run_btn.clicked.connect(run)
+        dlg.exec()
 
     def _show_db_manager(self) -> None:
-        """Show database manager."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Database Manager", "Database manager would open here")
+        """Show database stats and maintenance actions."""
+        if _OFFSCREEN:
+            return
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+        from ..tools.diag import DB_PATH
+        import sqlite3
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Database Manager")
+        lay = QVBoxLayout(dlg)
+        stats_lbl = QLabel("Loading...")
+        lay.addWidget(stats_lbl)
+        btns = QHBoxLayout()
+        vacuum_btn = QPushButton("VACUUM")
+        checkpoint_btn = QPushButton("Checkpoint WAL")
+        btns.addWidget(vacuum_btn); btns.addWidget(checkpoint_btn); btns.addStretch()
+        lay.addLayout(btns)
+
+        def refresh():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                cur = conn.cursor()
+                counts = {}
+                for table in ("positions", "analyses", "moves", "notes", "games"):
+                    try:
+                        cur.execute(f"SELECT COUNT(1) FROM {table}")
+                        counts[table] = cur.fetchone()[0]
+                    except Exception:
+                        counts[table] = 0
+                conn.close()
+                stats_lbl.setText("\n".join([f"{k}: {v}" for k, v in counts.items()]))
+            except Exception as e:
+                stats_lbl.setText(f"Error: {e}")
+
+        def vacuum():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                with conn:
+                    conn.execute("VACUUM;")
+                conn.close()
+                refresh()
+            except Exception as e:
+                stats_lbl.setText(f"VACUUM failed: {e}")
+
+        def checkpoint():
+            try:
+                conn = sqlite3.connect(str(DB_PATH))
+                with conn:
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+                conn.close()
+                refresh()
+            except Exception as e:
+                stats_lbl.setText(f"Checkpoint failed: {e}")
+
+        vacuum_btn.clicked.connect(vacuum)
+        checkpoint_btn.clicked.connect(checkpoint)
+        refresh()
+        dlg.exec()
 
     def _create_theme_menu(self, menu) -> None:
         """Create theme selection menu."""
@@ -978,12 +1193,38 @@ class MainWindow(BaseWindow):
             theme_group.addAction(action)
 
     def _set_theme(self, theme: str) -> None:
-        """Set application theme."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Theme", f"Theme set to: {theme}")
+        """Set application theme by reloading stylesheet."""
+        try:
+            from .themes import load_theme
+            app = QApplication.instance()
+            if app is None:
+                return
+            th = load_theme(theme)
+            bg = th.get('background', '#1e1e1e')
+            fg = th.get('foreground', '#f0f0f0')
+            accent = th.get('accent', '#4ea3ff')
+            subtle = th.get('subtle', '#2a2a2a')
+            app.setStyleSheet(
+                f"""
+                QWidget {{ background-color: {bg}; color: {fg}; font-size: 13px; }}
+                QToolBar {{ background: {subtle}; spacing: 8px; padding: 6px; border: 0; }}
+                QStatusBar {{ background: {subtle}; }}
+                QTabBar::tab {{ padding: 8px 14px; margin: 2px; }}
+                QTabWidget::pane {{ border: 1px solid {subtle}; }}
+                QPushButton {{ padding: 8px 14px; border-radius: 4px; background: {accent}; color: #0b0b0b; }}
+                QPushButton:disabled {{ background: #777; color: #333; }}
+                QGroupBox {{ border: 1px solid {subtle}; border-radius: 6px; margin-top: 10px; }}
+                QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 4px; }}
+                QGraphicsView {{ background-color: {bg}; }}
+                QSplitter::handle {{ background: {subtle}; width: 6px; }}
+                QLabel#TitleLabel {{ font-weight: 600; font-size: 16px; }}
+                """
+            )
+        except Exception:
+            pass
 
-    def _show_preferences(self) -> None:
-        """Show comprehensive preferences dialog."""
+    def _show_preferences(self, focus_tab: Optional[str] = None) -> None:
+        """Show comprehensive preferences dialog; optionally focus a tab."""
         from PyQt6.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QGroupBox,
             QLabel, QSpinBox, QCheckBox, QComboBox, QLineEdit, QPushButton,
@@ -1230,17 +1471,38 @@ class MainWindow(BaseWindow):
         
         layout.addLayout(button_layout)
         
+        if focus_tab:
+            for i in range(tabs.count()):
+                if tabs.tabText(i).lower() == focus_tab.lower():
+                    tabs.setCurrentIndex(i)
+                    break
         dialog.exec()
     
     def _save_preferences(self, dialog) -> None:
         """Save preferences to configuration file."""
         from PyQt6.QtWidgets import QMessageBox
-        
+        from ..tools.diag import CONFIG_PATH
         try:
-            # Would save to ~/.othello_coach/config.toml here
-            QMessageBox.information(dialog, "Preferences Saved", 
-                "Preferences have been saved successfully.\n"
-                "Some changes may require restarting the application.")
+            # Minimal TOML write of selected options
+            lines = []
+            # Engine
+            lines.append("[engine]")
+            lines.append(f"endgame_exact_empties = {endgame_spin.value()}")
+            lines.append(f"default_search_depth = {depth_spin.value()}")
+            lines.append(f"default_time_ms = {time_spin.value()}")
+            # UI
+            lines.append("\n[ui]")
+            lines.append(f"theme = \"{theme_combo.currentText().lower().replace(' ', '_')}\"")
+            lines.append(f"show_coordinates = {str(coords_cb.isChecked()).lower()}")
+            lines.append(f"show_hints = {str(hints_cb.isChecked()).lower()}")
+            lines.append(f"highlight_last_move = {str(last_move_cb.isChecked()).lower()}")
+            # DB
+            lines.append("\n[db]")
+            lines.append(f"busy_timeout_ms = {timeout_spin.value()}")
+            lines.append(f"auto_vacuum_days = {retention_spin.value()}")
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            CONFIG_PATH.write_text("\n".join(lines), encoding="utf-8")
+            QMessageBox.information(dialog, "Preferences Saved", "Preferences have been saved successfully.")
             dialog.close()
         except Exception as e:
             QMessageBox.warning(dialog, "Save Error", f"Failed to save preferences: {e}")
@@ -1261,6 +1523,25 @@ class MainWindow(BaseWindow):
             "• Local API with REST endpoints")
 
     def _show_docs(self) -> None:
-        """Show documentation."""
-        from PyQt6.QtWidgets import QMessageBox
-        QMessageBox.information(self, "Documentation", "Documentation would open here")
+        """Show README.md in a scrollable dialog."""
+        if _OFFSCREEN:
+            return
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        import pathlib
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Documentation")
+        lay = QVBoxLayout(dlg)
+        txt = QTextEdit(); txt.setReadOnly(True)
+        readme = pathlib.Path(__file__).resolve().parents[2] / "README.md"
+        try:
+            txt.setPlainText(readme.read_text(encoding="utf-8"))
+        except Exception:
+            txt.setPlainText("README not found.")
+        lay.addWidget(txt)
+        btn = QPushButton("Close"); btn.clicked.connect(dlg.close)
+        lay.addWidget(btn)
+        dlg.exec()
+
+    def _sq_name(self, square: int) -> str:
+        files = "abcdefgh"
+        return f"{files[square % 8]}{1 + square // 8}"

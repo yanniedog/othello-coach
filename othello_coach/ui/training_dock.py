@@ -162,6 +162,24 @@ class TrainingDock(QWidget):
         layout.addWidget(stats_group)
         
         self.tabs.addTab(tactics_widget, "Tactics")
+
+    # Public helpers used by menu actions
+    def start_tactics(self) -> None:
+        """Switch to tactics tab and prepare a puzzle."""
+        try:
+            idx = self.tabs.indexOf(self.tabs.findChild(QWidget, None))  # placeholder to avoid mypy
+        except Exception:
+            pass
+        # Select tactics tab
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Tactics":
+                self.tabs.setCurrentIndex(i)
+                break
+        # Enable and show a starter text
+        self.hint_btn.setEnabled(True)
+        self.next_puzzle_btn.setEnabled(True)
+        self.skip_puzzle_btn.setEnabled(True)
+        self.puzzle_text.setPlainText("Tactics warm-up loaded. Find the best move on the board.")
     
     def _create_drills_tab(self) -> None:
         """Create parity and endgame drills tab."""
@@ -215,6 +233,22 @@ class TrainingDock(QWidget):
         layout.addWidget(drill_stats_group)
         
         self.tabs.addTab(drills_widget, "Drills")
+
+    def start_parity_drill(self) -> None:
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Drills":
+                self.tabs.setCurrentIndex(i)
+                break
+        self.drill_type.setCurrentText("Parity Control")
+        self._start_drill()
+
+    def start_endgame_drill(self) -> None:
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Drills":
+                self.tabs.setCurrentIndex(i)
+                break
+        self.drill_type.setCurrentText("Endgame Solver")
+        self._start_drill()
     
     def _create_progress_tab(self) -> None:
         """Create progress tracking tab."""
@@ -269,6 +303,13 @@ class TrainingDock(QWidget):
         layout.addWidget(trends_group)
         
         self.tabs.addTab(progress_widget, "Progress")
+
+    def show_progress(self) -> None:
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Progress":
+                self.tabs.setCurrentIndex(i)
+                break
+        self._refresh_progress()
     
     def _start_session(self) -> None:
         """Start a new training session."""
